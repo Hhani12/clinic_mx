@@ -1,0 +1,150 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userExists() {
+      return isSignedIn() && userDoc().data != null;
+    }
+
+    function isActiveUser() {
+      return userExists() && userDoc().data.isActive == true;
+    }
+
+    function userClinicId() {
+      return userDoc().data.clinicId;
+    }
+
+    function userRole() {
+      return userDoc().data.role;
+    }
+
+    function inClinic(clinicId) {
+      return isActiveUser() && userClinicId() == clinicId;
+    }
+
+    function hasAnyRole(roles) {
+      return roles.hasAny([userRole()]);
+    }
+
+    function canManageClinic(clinicId) {
+      return inClinic(clinicId) && hasAnyRole(['admin', 'doctor']);
+    }
+
+    function canFrontDeskWrite(clinicId) {
+      return inClinic(clinicId) &&
+        hasAnyRole(['admin', 'doctor', 'reception']);
+    }
+
+    function validE164(phone) {
+      return phone is string && phone.matches('^\\+[1-9]\\d{7,14}$');
+    }
+
+    function validRequiredText(value, min, max) {
+      return value is string && value.size() >= min && value.size() <= max;
+    }
+
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || userRole() == 'admin');
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow update: if isSignedIn() && (
+        request.auth.uid == uid ||
+        (isActiveUser() &&
+          userRole() == 'admin' &&
+          resource.data.clinicId == userClinicId() &&
+          request.resource.data.clinicId == userClinicId())
+      );
+      allow delete: if false;
+    }
+
+    match /clinics/{clinicId} {
+      allow read: if inClinic(clinicId);
+      allow create: if false;
+      allow update: if canManageClinic(clinicId);
+      allow delete: if false;
+
+      match /patients/{patientId} {
+        allow read: if inClinic(clinicId);
+        allow create, update: if canFrontDeskWrite(clinicId) &&
+          request.resource.data.id == patientId &&
+          request.resource.data.clinicId == clinicId &&
+          validRequiredText(request.resource.data.firstName, 2, 40) &&
+          validRequiredText(request.resource.data.fatherName, 2, 40) &&
+          validRequiredText(request.resource.data.lastName, 2, 40) &&
+          validRequiredText(request.resource.data.displayName, 3, 120) &&
+          validRequiredText(request.resource.data.displayNameLower, 3, 120) &&
+          validE164(request.resource.data.phoneNumber);
+        allow delete: if canManageClinic(clinicId);
+      }
+
+      match /appointments/{appointmentId} {
+        allow read: if inClinic(clinicId);
+        allow create, update: if canFrontDeskWrite(clinicId) &&
+          request.resource.data.id == appointmentId &&
+          request.resource.data.clinicId == clinicId &&
+          request.resource.data.patientId is string &&
+          request.resource.data.patientName is string &&
+          validE164(request.resource.data.patientPhone) &&
+          request.resource.data.startAt is timestamp &&
+          request.resource.data.durationMinutes is int &&
+          request.resource.data.durationMinutes >= 5 &&
+          request.resource.data.durationMinutes <= 480 &&
+          request.resource.data.status in [
+            'scheduled',
+            'checked_in',
+            'in_treatment',
+            'completed',
+            'no_show',
+            'cancelled',
+          ];
+        allow delete: if canManageClinic(clinicId);
+      }
+
+      match /payments/{paymentId} {
+        allow read: if inClinic(clinicId);
+        allow create, update: if canFrontDeskWrite(clinicId) &&
+          request.resource.data.id == paymentId &&
+          request.resource.data.clinicId == clinicId &&
+          request.resource.data.patientId is string &&
+          request.resource.data.patientName is string &&
+          request.resource.data.amount is number &&
+          request.resource.data.paid is number &&
+          request.resource.data.remaining is number &&
+          request.resource.data.amount >= 0 &&
+          request.resource.data.paid >= 0 &&
+          request.resource.data.remaining >= 0 &&
+          request.resource.data.method in ['cash', 'card', 'transfer'];
+        allow delete: if canManageClinic(clinicId);
+      }
+
+      match /dentalPlans/{itemId} {
+        allow read: if inClinic(clinicId);
+        allow create, update: if canManageClinic(clinicId) &&
+          request.resource.data.id == itemId &&
+          request.resource.data.clinicId == clinicId &&
+          request.resource.data.patientId is string &&
+          request.resource.data.toothId is string &&
+          request.resource.data.numberingSystem in ['fdi', 'universal'] &&
+          request.resource.data.actionLabel is string &&
+          request.resource.data.timestamp is timestamp;
+        allow delete: if canManageClinic(clinicId);
+      }
+
+      match /reminderLogs/{logId} {
+        allow read: if inClinic(clinicId);
+        allow write: if false;
+      }
+
+      match /settings/{docId} {
+        allow read: if inClinic(clinicId);
+        allow write: if canManageClinic(clinicId);
+      }
+    }
+  }
+}

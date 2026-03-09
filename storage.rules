@@ -1,0 +1,31 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return firestore.get(
+        /databases/(default)/documents/users/$(request.auth.uid)
+      );
+    }
+
+    function inClinic(clinicId) {
+      return isSignedIn() &&
+        userDoc().data != null &&
+        userDoc().data.isActive == true &&
+        userDoc().data.clinicId == clinicId;
+    }
+
+    function canWriteFiles(clinicId) {
+      return inClinic(clinicId) &&
+        ['admin', 'doctor', 'reception'].hasAny([userDoc().data.role]);
+    }
+
+    match /clinics/{clinicId}/patients/{patientId}/{allPaths=**} {
+      allow read: if inClinic(clinicId);
+      allow write: if canWriteFiles(clinicId);
+    }
+  }
+}
