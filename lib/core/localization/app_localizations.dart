@@ -18,7 +18,7 @@ class AppLocalizations {
 
   static const Map<String, Map<String, String>> _values = {
     'ar': {
-      'appName': 'Clinic MX',
+      'appName': 'Locas Clinic',
       'login': 'تسجيل الدخول',
       'email': 'البريد الإلكتروني',
       'password': 'كلمة المرور',
@@ -185,7 +185,7 @@ class AppLocalizations {
       'staffManagement': 'إدارة الفريق',
     },
     'en': {
-      'appName': 'Clinic MX',
+      'appName': 'Locas Clinic',
       'login': 'Login',
       'email': 'Email',
       'password': 'Password',

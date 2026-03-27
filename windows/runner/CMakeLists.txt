@@ -37,7 +37,7 @@ target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Set the display name (with space) as the actual output executable filename.
-set_target_properties(${BINARY_NAME} PROPERTIES OUTPUT_NAME "locas clinic")
+set_target_properties(${BINARY_NAME} PROPERTIES OUTPUT_NAME "Locas Clinic")
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
