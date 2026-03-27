@@ -21,7 +21,7 @@ class LocalNotificationService {
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios = DarwinInitializationSettings();
     const windows = WindowsInitializationSettings(
-      appName: 'Clinic MX',
+      appName: 'Locas Clinic',
       appUserModelId: 'com.medicsapp.clinic',
       guid: '0f7f2e12-4cb0-4f6d-a279-3f4ca9d13f33',
     );

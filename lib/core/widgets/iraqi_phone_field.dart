@@ -10,12 +10,14 @@ class IraqiPhoneField extends StatefulWidget {
     required this.controller,
     required this.labelText,
     this.validator,
+    this.onChanged,
   });
 
   /// Controller holds only the local part (without +964).
   final TextEditingController controller;
   final String labelText;
   final String? Function(String?)? validator;
+  final ValueChanged<String>? onChanged;
 
   /// Combines "+964" with the local value.
   static String fullNumber(String localValue) {
@@ -53,7 +55,9 @@ class _IraqiPhoneFieldState extends State<IraqiPhoneField> {
       textDirection: TextDirection.ltr,
       inputFormatters: [
         FilteringTextInputFormatter.digitsOnly,
-        LengthLimitingTextInputFormatter(10), // Iraqi local numbers are max 10 digits
+        LengthLimitingTextInputFormatter(
+          10,
+        ), // Iraqi local numbers are max 10 digits
       ],
       decoration: InputDecoration(
         labelText: widget.labelText,
@@ -74,6 +78,7 @@ class _IraqiPhoneFieldState extends State<IraqiPhoneField> {
         hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
       ),
       validator: widget.validator,
+      onChanged: widget.onChanged,
     );
   }
 }

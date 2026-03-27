@@ -5,10 +5,12 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/enums/visit_status.dart';
 import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/routing/route_paths.dart';
+import '../../../../core/services/whatsapp/whatsapp_providers.dart';
 import '../../../../core/utils/date_formats.dart';
 import '../../../../core/widgets/clinic_scaffold.dart';
 import '../../../../core/widgets/glass_card.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../settings/presentation/providers/settings_providers.dart';
 import '../../domain/entities/appointment.dart';
 import '../providers/appointments_providers.dart';
 import '../widgets/appointment_form_sheet.dart';
@@ -21,6 +23,7 @@ class TodayVisitsPage extends ConsumerWidget {
     final appointmentsAsync = ref.watch(todayAppointmentsProvider);
     final clinicId = ref.watch(currentClinicIdProvider);
     final tr = context.l10n.tr;
+    final ws = ref.watch(whatsAppServiceProvider);
 
     return ClinicScaffold(
       title: tr('todayVisits'),
@@ -29,7 +32,8 @@ class TodayVisitsPage extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => Center(child: Text(error.toString())),
         data: (appointments) {
-          final sorted = [...appointments]..sort((a, b) => a.startAt.compareTo(b.startAt));
+          final sorted = [...appointments]
+            ..sort((a, b) => a.startAt.compareTo(b.startAt));
           return Column(
             children: [
               GlassCard(
@@ -54,8 +58,31 @@ class TodayVisitsPage extends ConsumerWidget {
                           final item = sorted[index];
                           return _TodayVisitTile(
                             appointment: item,
+                            showAutomated: ws != null,
                             onCall: () => _launchPhone(item.patientPhone),
-                            onWhatsApp: () => _launchWhatsApp(item.patientPhone),
+                            onWhatsApp: () =>
+                                _launchWhatsApp(item.patientPhone),
+                            onSendAutomatedReminder: () async {
+                              final clinic = ref.read(clinicInfoProvider).value;
+                              final success = await ws!.sendTemplateReminder(
+                                to: item.patientPhone,
+                                patientName: item.patientName,
+                                appointmentDate: DateFormats.full.format(
+                                  item.startAt,
+                                ),
+                                clinicName: clinic?.name ?? 'عيادتنا',
+                              );
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    success
+                                        ? 'تم إرسال التذكير بنجاح'
+                                        : 'فشل إرسال التذكير، تأكد من الإعدادات',
+                                  ),
+                                ),
+                              );
+                            },
                             onMarkArrived: clinicId == null
                                 ? null
                                 : () => ref
@@ -71,9 +98,8 @@ class TodayVisitsPage extends ConsumerWidget {
                             onReschedule: () => showModalBottomSheet<void>(
                               context: context,
                               isScrollControlled: true,
-                              builder: (_) => AppointmentFormSheet(
-                                appointment: item,
-                              ),
+                              builder: (_) =>
+                                  AppointmentFormSheet(appointment: item),
                             ),
                           );
                         },
@@ -105,15 +131,19 @@ class TodayVisitsPage extends ConsumerWidget {
 class _TodayVisitTile extends StatelessWidget {
   const _TodayVisitTile({
     required this.appointment,
+    this.showAutomated = false,
     this.onCall,
     this.onWhatsApp,
+    this.onSendAutomatedReminder,
     this.onMarkArrived,
     this.onReschedule,
   });
 
   final Appointment appointment;
+  final bool showAutomated;
   final VoidCallback? onCall;
   final VoidCallback? onWhatsApp;
+  final VoidCallback? onSendAutomatedReminder;
   final VoidCallback? onMarkArrived;
   final VoidCallback? onReschedule;
 
@@ -137,6 +167,9 @@ class _TodayVisitTile extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
+          if (appointment.doctorName.isNotEmpty)
+            Text('الطبيب: ${appointment.doctorName}'),
+          if (appointment.doctorName.isNotEmpty) const SizedBox(height: 6),
           Text(appointment.reason),
           const SizedBox(height: 8),
           Wrap(
@@ -153,6 +186,16 @@ class _TodayVisitTile extends StatelessWidget {
                 icon: const Icon(Icons.chat_rounded),
                 label: Text(tr('whatsapp')),
               ),
+              if (showAutomated)
+                FilledButton.icon(
+                  onPressed: onSendAutomatedReminder,
+                  icon: const Icon(Icons.auto_awesome_rounded),
+                  label: const Text('تذكير تلقائي'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.green.withValues(alpha: 0.2),
+                    foregroundColor: Colors.green,
+                  ),
+                ),
               FilledButton.tonalIcon(
                 onPressed: onMarkArrived,
                 icon: const Icon(Icons.check_circle_outline_rounded),

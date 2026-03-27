@@ -15,7 +15,7 @@ class ClinicMxApp extends ConsumerWidget {
     final appearance = ref.watch(themeControllerProvider);
 
     return MaterialApp.router(
-      title: 'Clinic MX',
+      title: 'Locas Clinic',
       debugShowCheckedModeBanner: false,
       routerConfig: router,
       theme: AppTheme.buildTheme(

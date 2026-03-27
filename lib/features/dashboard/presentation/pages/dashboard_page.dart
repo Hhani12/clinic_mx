@@ -29,29 +29,37 @@ class DashboardPage extends ConsumerWidget {
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 14),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _KpiCard(
-                title: tr('totalTodayPatients'),
-                value: '$todayVisits',
-                icon: Icons.today_rounded,
-                onTap: () => context.go(RoutePaths.todayVisits),
-              ),
-              _KpiCard(
-                title: tr('upcomingVisits'),
-                value: '$upcomingVisits',
-                icon: Icons.event_available_rounded,
-                onTap: () => context.go(RoutePaths.appointments),
-              ),
-              _KpiCard(
-                title: tr('pendingPayments'),
-                value: CurrencyFormat.iqd(pendingPayments),
-                icon: Icons.payments_rounded,
-                onTap: () => context.go(RoutePaths.payments),
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final cardWidth = _kpiCardWidth(constraints.maxWidth);
+              return Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  _KpiCard(
+                    width: cardWidth,
+                    title: tr('totalTodayPatients'),
+                    value: '$todayVisits',
+                    icon: Icons.today_rounded,
+                    onTap: () => context.go(RoutePaths.todayVisits),
+                  ),
+                  _KpiCard(
+                    width: cardWidth,
+                    title: tr('upcomingVisits'),
+                    value: '$upcomingVisits',
+                    icon: Icons.event_available_rounded,
+                    onTap: () => context.go(RoutePaths.appointments),
+                  ),
+                  _KpiCard(
+                    width: cardWidth,
+                    title: tr('pendingPayments'),
+                    value: CurrencyFormat.iqd(pendingPayments),
+                    icon: Icons.payments_rounded,
+                    onTap: () => context.go(RoutePaths.payments),
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 16),
           GlassCard(
@@ -68,6 +76,11 @@ class DashboardPage extends ConsumerWidget {
                   onPressed: () => context.go(RoutePaths.appointments),
                   icon: const Icon(Icons.event_note_rounded),
                   label: Text(tr('appointments')),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: () => context.go(RoutePaths.doctors),
+                  icon: const Icon(Icons.badge_rounded),
+                  label: Text(tr('doctors')),
                 ),
                 FilledButton.tonalIcon(
                   onPressed: () => context.go(RoutePaths.dental),
@@ -90,12 +103,14 @@ class DashboardPage extends ConsumerWidget {
 
 class _KpiCard extends StatelessWidget {
   const _KpiCard({
+    required this.width,
     required this.title,
     required this.value,
     required this.icon,
     this.onTap,
   });
 
+  final double width;
   final String title;
   final String value;
   final IconData icon;
@@ -104,7 +119,7 @@ class _KpiCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 280,
+      width: width,
       child: GlassCard(
         onTap: onTap,
         child: Column(
@@ -120,4 +135,18 @@ class _KpiCard extends StatelessWidget {
       ),
     );
   }
+}
+
+double _kpiCardWidth(double availableWidth) {
+  const spacing = 12.0;
+  final columns = availableWidth >= 1080
+      ? 3
+      : availableWidth >= 700
+      ? 2
+      : 1;
+  final totalSpacing = spacing * (columns - 1);
+  return ((availableWidth - totalSpacing) / columns).clamp(
+    220.0,
+    availableWidth,
+  );
 }

@@ -1,4 +1,4 @@
-# Clinic MX
+# Locas Clinic
 
 تطبيق Flutter لإدارة العيادات (Arabic-first RTL) يعمل على:
 - Windows Desktop

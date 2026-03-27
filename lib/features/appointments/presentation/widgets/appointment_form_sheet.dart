@@ -3,23 +3,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/enums/visit_status.dart';
 import '../../../../core/localization/app_localizations.dart';
+import '../../../doctors/domain/entities/doctor_profile.dart';
+import '../../../doctors/presentation/providers/doctors_providers.dart';
 import '../../../patients/domain/entities/patient.dart';
 import '../../../patients/presentation/providers/patients_providers.dart';
 import '../../domain/entities/appointment.dart';
 import '../providers/appointments_providers.dart';
 
 class AppointmentFormSheet extends ConsumerStatefulWidget {
-  const AppointmentFormSheet({
-    super.key,
-    this.appointment,
-  });
+  const AppointmentFormSheet({super.key, this.appointment});
 
   final Appointment? appointment;
 
   bool get isEdit => appointment != null;
 
   @override
-  ConsumerState<AppointmentFormSheet> createState() => _AppointmentFormSheetState();
+  ConsumerState<AppointmentFormSheet> createState() =>
+      _AppointmentFormSheetState();
 }
 
 class _AppointmentFormSheetState extends ConsumerState<AppointmentFormSheet> {
@@ -28,6 +28,7 @@ class _AppointmentFormSheetState extends ConsumerState<AppointmentFormSheet> {
   final _durationController = TextEditingController(text: '30');
 
   String? _selectedPatientId;
+  String? _selectedDoctorId;
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
   VisitStatus _status = VisitStatus.scheduled;
@@ -38,6 +39,7 @@ class _AppointmentFormSheetState extends ConsumerState<AppointmentFormSheet> {
     final appointment = widget.appointment;
     if (appointment != null) {
       _selectedPatientId = appointment.patientId;
+      _selectedDoctorId = appointment.doctorId;
       _reasonController.text = appointment.reason;
       _durationController.text = appointment.durationMinutes.toString();
       _selectedDate = appointment.startAt;
@@ -75,12 +77,25 @@ class _AppointmentFormSheetState extends ConsumerState<AppointmentFormSheet> {
     }
   }
 
-  Future<void> _save(List<Patient> patients) async {
+  Future<void> _save(
+    List<Patient> patients,
+    List<DoctorProfile> doctors,
+  ) async {
     if (!_formKey.currentState!.validate()) return;
     if (patients.isEmpty) return;
+    if (doctors.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('أضف طبيبًا أولاً من صفحة الأطباء')),
+      );
+      return;
+    }
     final patient = patients.firstWhere(
       (item) => item.id == _selectedPatientId,
       orElse: () => patients.first,
+    );
+    final doctor = doctors.firstWhere(
+      (item) => item.id == _selectedDoctorId,
+      orElse: () => doctors.first,
     );
     final startAt = DateTime(
       _selectedDate.year,
@@ -98,6 +113,8 @@ class _AppointmentFormSheetState extends ConsumerState<AppointmentFormSheet> {
         patientId: patient.id,
         patientName: patient.displayName,
         patientPhone: patient.phoneNumber,
+        doctorId: doctor.id,
+        doctorName: doctor.fullName,
         startAt: startAt,
         durationMinutes: durationMinutes,
         reason: _reasonController.text.trim(),
@@ -108,6 +125,8 @@ class _AppointmentFormSheetState extends ConsumerState<AppointmentFormSheet> {
         patientId: patient.id,
         patientName: patient.displayName,
         patientPhone: patient.phoneNumber,
+        doctorId: doctor.id,
+        doctorName: doctor.fullName,
         startAt: startAt,
         durationMinutes: durationMinutes,
         reason: _reasonController.text.trim(),
@@ -129,20 +148,29 @@ class _AppointmentFormSheetState extends ConsumerState<AppointmentFormSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final patients = ref.watch(patientsStreamProvider).value ?? const <Patient>[];
+    final patients =
+        ref.watch(patientsStreamProvider).value ?? const <Patient>[];
+    final doctors = ref.watch(activeDoctorsProvider);
     final editorState = ref.watch(appointmentEditorControllerProvider);
     final tr = context.l10n.tr;
 
     ref.listen(appointmentEditorControllerProvider, (_, next) {
       if (next.hasError) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(next.error.toString())),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(next.error.toString())));
       }
     });
 
-    if (patients.isNotEmpty && _selectedPatientId == null) {
+    if (patients.isNotEmpty &&
+        (_selectedPatientId == null ||
+            !patients.any((item) => item.id == _selectedPatientId))) {
       _selectedPatientId = patients.first.id;
+    }
+    if (doctors.isNotEmpty &&
+        (_selectedDoctorId == null ||
+            !doctors.any((item) => item.id == _selectedDoctorId))) {
+      _selectedDoctorId = doctors.first.id;
     }
 
     return Padding(
@@ -175,8 +203,26 @@ class _AppointmentFormSheetState extends ConsumerState<AppointmentFormSheet> {
                       ),
                     )
                     .toList(),
-                onChanged: (value) => setState(() => _selectedPatientId = value),
+                onChanged: (value) =>
+                    setState(() => _selectedPatientId = value),
                 decoration: InputDecoration(labelText: tr('selectPatient')),
+                validator: (value) =>
+                    value == null ? tr('requiredField') : null,
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                key: ValueKey('doctor_${_selectedDoctorId ?? 'none'}'),
+                initialValue: _selectedDoctorId,
+                items: doctors
+                    .map(
+                      (doctor) => DropdownMenuItem(
+                        value: doctor.id,
+                        child: Text(doctor.fullName),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) => setState(() => _selectedDoctorId = value),
+                decoration: const InputDecoration(labelText: 'الطبيب'),
                 validator: (value) =>
                     value == null ? tr('requiredField') : null,
               ),
@@ -254,7 +300,9 @@ class _AppointmentFormSheetState extends ConsumerState<AppointmentFormSheet> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: editorState.isLoading ? null : () => _save(patients),
+                  onPressed: editorState.isLoading
+                      ? null
+                      : () => _save(patients, doctors),
                   icon: editorState.isLoading
                       ? const SizedBox(
                           width: 18,

@@ -6,10 +6,10 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/exceptions/app_exception.dart';
 import '../../../../core/services/firebase/firebase_providers.dart';
 import '../../../../core/services/firebase/firestore_service.dart';
-import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/repositories/dental_repository_impl.dart';
 import '../../domain/entities/dental_plan_item.dart';
 import '../../domain/repositories/dental_repository.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
 
 final dentalRepositoryProvider = Provider<DentalRepository>((ref) {
   return DentalRepositoryImpl(
@@ -20,19 +20,17 @@ final dentalRepositoryProvider = Provider<DentalRepository>((ref) {
 
 final selectedDentalPatientIdProvider = StateProvider<String?>((ref) => null);
 
-final dentalItemsForSelectedPatientProvider = StreamProvider<List<DentalPlanItem>>((
-  ref,
-) {
-  final clinicId = ref.watch(currentClinicIdProvider);
-  final patientId = ref.watch(selectedDentalPatientIdProvider);
-  if (clinicId == null || patientId == null || clinicId.isEmpty) {
-    return const Stream.empty();
-  }
-  return ref.watch(dentalRepositoryProvider).watchPatientItems(
-        clinicId: clinicId,
-        patientId: patientId,
-      );
-});
+final dentalItemsForSelectedPatientProvider =
+    StreamProvider<List<DentalPlanItem>>((ref) {
+      final clinicId = ref.watch(currentClinicIdProvider);
+      final patientId = ref.watch(selectedDentalPatientIdProvider);
+      if (clinicId == null || patientId == null || clinicId.isEmpty) {
+        return const Stream.empty();
+      }
+      return ref
+          .watch(dentalRepositoryProvider)
+          .watchPatientItems(clinicId: clinicId, patientId: patientId);
+    });
 
 class DentalActionController extends AutoDisposeAsyncNotifier<void> {
   @override
@@ -40,6 +38,7 @@ class DentalActionController extends AutoDisposeAsyncNotifier<void> {
 
   Future<void> saveToTeeth({
     required String patientId,
+    required String doctorId,
     required List<String> toothIds,
     required String numberingSystem,
     required String actionLabel,
@@ -48,9 +47,8 @@ class DentalActionController extends AutoDisposeAsyncNotifier<void> {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final clinicId = ref.read(currentClinicIdProvider);
-      final userId = ref.read(currentUserIdProvider);
-      if (clinicId == null || clinicId.isEmpty || userId == null) {
-        throw const AppException('لا يوجد سياق عيادة أو مستخدم، أعد تسجيل الدخول');
+      if (clinicId == null || clinicId.isEmpty) {
+        throw const AppException('لا يوجد سياق عيادة، أعد تسجيل الدخول');
       }
 
       final now = DateTime.now();
@@ -65,7 +63,7 @@ class DentalActionController extends AutoDisposeAsyncNotifier<void> {
               actionLabel: actionLabel,
               note: note,
               timestamp: now,
-              doctorId: userId,
+              doctorId: doctorId,
             ),
           )
           .toList();
@@ -77,5 +75,5 @@ class DentalActionController extends AutoDisposeAsyncNotifier<void> {
 
 final dentalActionControllerProvider =
     AutoDisposeAsyncNotifierProvider<DentalActionController, void>(
-  DentalActionController.new,
-);
+      DentalActionController.new,
+    );

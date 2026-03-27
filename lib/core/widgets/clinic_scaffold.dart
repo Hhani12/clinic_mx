@@ -37,6 +37,7 @@ class ClinicScaffold extends ConsumerWidget {
       Icons.event_available_rounded,
       'appointments',
     ),
+    _NavigationItem(RoutePaths.doctors, Icons.badge_rounded, 'doctors'),
     _NavigationItem(RoutePaths.todayVisits, Icons.today_rounded, 'todayVisits'),
     _NavigationItem(
       RoutePaths.dental,
@@ -49,10 +50,17 @@ class ClinicScaffold extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isMobile = MediaQuery.sizeOf(context).width < 1024;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isMobile = screenWidth < 900;
+    final isCompactDesktop = screenWidth < 1280;
+    final sideNavWidth = (screenWidth * 0.24).clamp(220.0, 300.0).toDouble();
+    final mobileContentPadding = screenWidth < 480 ? 12.0 : 16.0;
+    final desktopPadding = isCompactDesktop ? 12.0 : 16.0;
     final appearance = ref.watch(themeControllerProvider);
     final glass = context.glassTheme;
-    final currentIndex = _items.indexWhere((item) => item.route == selectedRoute);
+    final currentIndex = _items.indexWhere(
+      (item) => item.route == selectedRoute,
+    );
     final selectedIndex = currentIndex < 0 ? 0 : currentIndex;
 
     if (isMobile) {
@@ -75,30 +83,44 @@ class ClinicScaffold extends ConsumerWidget {
           ),
           body: SafeArea(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              padding: EdgeInsets.fromLTRB(
+                mobileContentPadding,
+                8,
+                mobileContentPadding,
+                mobileContentPadding,
+              ),
               child: body,
             ),
           ),
           floatingActionButton: floatingActionButton,
           bottomNavigationBar: SafeArea(
-            minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            minimum: EdgeInsets.fromLTRB(
+              mobileContentPadding - 2,
+              0,
+              mobileContentPadding - 2,
+              mobileContentPadding - 2,
+            ),
             child: GlassContainer(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
               borderRadius: 26,
               blurSigma: glass.blurIntensity * 0.75,
-              child: NavigationBar(
-                selectedIndex: selectedIndex,
-                destinations: _items
-                    .map(
-                      (item) => NavigationDestination(
-                        icon: Icon(item.icon),
-                        label: context.l10n.tr(item.labelKey),
-                      ),
-                    )
-                    .toList(),
-                onDestinationSelected: (index) {
-                  context.go(_items[index].route);
-                },
+              child: SizedBox(
+                height: 52,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _items.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(width: 6),
+                  itemBuilder: (context, index) {
+                    final item = _items[index];
+                    return _MobileNavChip(
+                      selected: index == selectedIndex,
+                      icon: item.icon,
+                      label: context.l10n.tr(item.labelKey),
+                      onTap: () => context.go(item.route),
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -114,9 +136,9 @@ class ClinicScaffold extends ConsumerWidget {
           child: Row(
             children: [
               SizedBox(
-                width: 300,
+                width: sideNavWidth,
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(desktopPadding),
                   child: GlassCard(
                     padding: const EdgeInsets.symmetric(
                       vertical: 18,
@@ -149,9 +171,7 @@ class ClinicScaffold extends ConsumerWidget {
                               Expanded(
                                 child: Text(
                                   context.l10n.tr('appName'),
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
+                                  style: Theme.of(context).textTheme.titleMedium
                                       ?.copyWith(fontWeight: FontWeight.w700),
                                 ),
                               ),
@@ -171,7 +191,8 @@ class ClinicScaffold extends ConsumerWidget {
                                 onTap: () => context.go(item.route),
                               );
                             },
-                            separatorBuilder: (_, index) => const SizedBox(height: 6),
+                            separatorBuilder: (_, index) =>
+                                const SizedBox(height: 6),
                             itemCount: _items.length,
                           ),
                         ),
@@ -192,15 +213,19 @@ class ClinicScaffold extends ConsumerWidget {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 16, right: 16, bottom: 16),
+                  padding: EdgeInsets.only(
+                    top: desktopPadding,
+                    right: desktopPadding,
+                    bottom: desktopPadding,
+                  ),
                   child: GlassCard(
                     padding: EdgeInsets.zero,
                     child: Column(
                       children: [
                         Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 14,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isCompactDesktop ? 16 : 20,
+                            vertical: isCompactDesktop ? 12 : 14,
                           ),
                           child: Row(
                             children: [
@@ -223,7 +248,7 @@ class ClinicScaffold extends ConsumerWidget {
                         ),
                         Expanded(
                           child: Padding(
-                            padding: const EdgeInsets.all(16),
+                            padding: EdgeInsets.all(isCompactDesktop ? 12 : 16),
                             child: body,
                           ),
                         ),
@@ -302,6 +327,73 @@ class _DesktopNavTile extends StatelessWidget {
   }
 }
 
+class _MobileNavChip extends StatelessWidget {
+  const _MobileNavChip({
+    required this.selected,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final glass = context.glassTheme;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          padding: EdgeInsets.symmetric(
+            horizontal: selected ? 12 : 10,
+            vertical: 8,
+          ),
+          decoration: BoxDecoration(
+            color: selected
+                ? primary.withValues(alpha: 0.16)
+                : Colors.white.withValues(alpha: 0.03),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected
+                  ? primary.withValues(alpha: 0.35)
+                  : Colors.white.withValues(alpha: 0.08),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: selected ? primary : glass.textSecondary,
+              ),
+              if (selected) ...[
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _NavigationItem {
   const _NavigationItem(this.route, this.icon, this.labelKey);
 
@@ -309,4 +401,3 @@ class _NavigationItem {
   final IconData icon;
   final String labelKey;
 }
-

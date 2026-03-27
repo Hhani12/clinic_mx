@@ -9,12 +9,16 @@ import '../../../../core/widgets/clinic_scaffold.dart';
 import '../../../../core/widgets/glass_button.dart';
 import '../../../../core/widgets/glass_card.dart';
 import '../../domain/entities/dental_plan_item.dart';
+import '../../domain/entities/tooth_record.dart';
+import '../../../doctors/presentation/providers/doctors_providers.dart';
 import '../../../patients/domain/entities/patient.dart';
 import '../../../patients/presentation/providers/patients_providers.dart';
 import '../../../patients/presentation/widgets/investigation_section.dart';
 import '../../../settings/presentation/providers/settings_providers.dart';
 import '../providers/dental_providers.dart';
+import '../providers/tooth_records_providers.dart';
 import '../widgets/teeth_chart.dart';
+import '../widgets/tooth_detail_panel.dart';
 
 class DentalChartPage extends ConsumerStatefulWidget {
   const DentalChartPage({super.key});
@@ -30,6 +34,7 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
 
   int? _hoveredTooth;
   String? _selectedAction;
+  String? _selectedDoctorId;
   bool _multiSelectEnabled = false;
 
   @override
@@ -39,25 +44,40 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
     super.dispose();
   }
 
+  /// Save procedure: creates DentalPlanItem (audit log) AND updates ToothRecord
   Future<void> _applyAction({
     required String patientId,
+    required String doctorId,
     required TeethNumberingSystem numberingSystem,
   }) async {
     final action = _selectedAction;
     if (action == null || _selectedTeeth.isEmpty) return;
+    if (doctorId.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('يرجى اختيار طبيب')),
+      );
+      return;
+    }
+
+    // Find doctor name for tooth record
+    final doctors = ref.read(activeDoctorsProvider);
+    final doctorName = doctors
+        .where((d) => d.id == doctorId)
+        .map((d) => d.fullName)
+        .firstOrNull;
 
     final toothIds = _selectedTeeth
-        .map(
-          (universal) => numberingSystem == TeethNumberingSystem.fdi
-              ? ToothMeta.of(universal).fdi
-              : universal.toString(),
-        )
+        .map((universal) => numberingSystem == TeethNumberingSystem.fdi
+            ? ToothMeta.of(universal).fdi
+            : universal.toString())
         .toList();
 
+    // 1. Save to dentalPlans (audit log — existing flow)
     await ref
         .read(dentalActionControllerProvider.notifier)
         .saveToTeeth(
           patientId: patientId,
+          doctorId: doctorId,
           toothIds: toothIds,
           numberingSystem: numberingSystem.name,
           actionLabel: action,
@@ -67,6 +87,24 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
     if (!mounted) return;
     final state = ref.read(dentalActionControllerProvider);
     if (state.hasError) return;
+
+    // 2. Update tooth records (per-tooth state)
+    for (final toothId in toothIds) {
+      await ref
+          .read(toothRecordControllerProvider.notifier)
+          .addProcedure(
+            patientId: patientId,
+            toothId: toothId,
+            actionLabel: action,
+            doctorId: doctorId,
+            doctorName: doctorName,
+            note: _noteController.text.trim().isEmpty
+                ? null
+                : _noteController.text.trim(),
+          );
+    }
+
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(context.l10n.tr('savedSuccessfully'))),
     );
@@ -116,19 +154,48 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
   Widget build(BuildContext context) {
     final patients =
         ref.watch(patientsStreamProvider).value ?? const <Patient>[];
+    final doctors = ref.watch(activeDoctorsProvider);
     final selectedPatientId = ref.watch(selectedDentalPatientIdProvider);
     final numberingSystem = ref.watch(teethNumberingProvider);
     final actions = ref.watch(toothActionsProvider);
     final history = ref.watch(dentalItemsForSelectedPatientProvider);
     final editorState = ref.watch(dentalActionControllerProvider);
-    final isDesktop = MediaQuery.sizeOf(context).width >= 1100;
+    final toothStatuses = ref.watch(toothStatusMapProvider);
+    final procedureCounts = ref.watch(toothProcedureCountProvider);
+    final toothRecords = ref.watch(toothRecordsForPatientProvider);
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isDesktop = screenWidth >= 1100;
+    final sidePanelWidth =
+        (screenWidth * 0.3).clamp(320.0, 420.0).toDouble();
+    final chartAreaWidth =
+        (isDesktop ? screenWidth - sidePanelWidth - 80 : screenWidth - 32)
+            .clamp(240.0, double.infinity)
+            .toDouble();
+    const selectorSpacing = 10.0;
+    final selectorColumns = chartAreaWidth >= 900
+        ? 3
+        : chartAreaWidth >= 620
+            ? 2
+            : 1;
+    final selectorWidth =
+        ((chartAreaWidth - ((selectorColumns - 1) * selectorSpacing)) /
+                selectorColumns)
+            .clamp(220.0, chartAreaWidth)
+            .toDouble();
     final tr = context.l10n.tr;
 
     ref.listen(dentalActionControllerProvider, (previous, next) {
       if (next.hasError) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(next.error.toString())));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(next.error.toString())),
+        );
+      }
+    });
+    ref.listen(toothRecordControllerProvider, (previous, next) {
+      if (next.hasError) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(next.error.toString())),
+        );
       }
     });
 
@@ -138,11 +205,21 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
             patients.first.id,
       );
     }
+    if (doctors.isNotEmpty &&
+        (_selectedDoctorId == null ||
+            !doctors.any((item) => item.id == _selectedDoctorId))) {
+      _selectedDoctorId = doctors.first.id;
+    }
 
-    // Get info for the first selected tooth (for the info panel)
+    // Get info for the first selected tooth
     ToothMeta? selectedToothMeta;
+    ToothRecord? selectedToothRecord;
     if (_selectedTeeth.isNotEmpty) {
       selectedToothMeta = ToothMeta.of(_selectedTeeth.first);
+      final records = toothRecords.valueOrNull ?? [];
+      selectedToothRecord = records
+          .where((r) => r.toothId == selectedToothMeta!.fdi)
+          .firstOrNull;
     }
 
     return ClinicScaffold(
@@ -164,23 +241,28 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
                           children: [
                             Text(
                               tr('interactiveDentalChart'),
-                              style: Theme.of(context).textTheme.headlineSmall
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .headlineSmall
                                   ?.copyWith(fontWeight: FontWeight.w700),
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Interactive Dental Chart',
-                              style: Theme.of(context).textTheme.bodySmall
+                              '3D Interactive Dental Chart',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
                                   ?.copyWith(
-                                    color: Colors.white.withValues(alpha: 0.6),
+                                    color:
+                                        Colors.white.withValues(alpha: 0.6),
                                   ),
                               textAlign: TextAlign.center,
                             ),
                           ],
                         ),
                       ),
-                      // Patient selector + controls
+                      // Patient + Doctor selectors
                       GlassCard(
                         child: Wrap(
                           spacing: 10,
@@ -188,31 +270,48 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             SizedBox(
-                              width: 280,
+                              width: selectorWidth,
                               child: DropdownButtonFormField<String>(
                                 key: ValueKey(
                                   'dental_patient_$selectedPatientId',
                                 ),
                                 initialValue: selectedPatientId,
                                 items: patients
-                                    .map(
-                                      (patient) => DropdownMenuItem(
-                                        value: patient.id,
-                                        child: Text(patient.displayName),
-                                      ),
-                                    )
+                                    .map((patient) => DropdownMenuItem(
+                                          value: patient.id,
+                                          child: Text(patient.displayName),
+                                        ))
                                     .toList(),
                                 onChanged: (value) {
                                   ref
-                                          .read(
-                                            selectedDentalPatientIdProvider
-                                                .notifier,
-                                          )
-                                          .state =
-                                      value;
+                                      .read(selectedDentalPatientIdProvider
+                                          .notifier)
+                                      .state = value;
                                 },
                                 decoration: InputDecoration(
                                   labelText: tr('selectPatient'),
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: selectorWidth,
+                              child: DropdownButtonFormField<String>(
+                                key: ValueKey(
+                                  'dental_doctor_${_selectedDoctorId ?? 'none'}',
+                                ),
+                                initialValue: _selectedDoctorId,
+                                items: doctors
+                                    .map((doctor) => DropdownMenuItem(
+                                          value: doctor.id,
+                                          child: Text(doctor.fullName),
+                                        ))
+                                    .toList(),
+                                onChanged: (value) {
+                                  setState(
+                                      () => _selectedDoctorId = value);
+                                },
+                                decoration: InputDecoration(
+                                  labelText: tr('selectDoctor'),
                                 ),
                               ),
                             ),
@@ -220,7 +319,8 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
                               label: Text(tr('multiSelectHint')),
                               selected: _multiSelectEnabled,
                               onSelected: (selected) {
-                                setState(() => _multiSelectEnabled = selected);
+                                setState(
+                                    () => _multiSelectEnabled = selected);
                               },
                             ),
                             if (_selectedTeeth.isNotEmpty)
@@ -242,9 +342,10 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
                       if (_selectedTeeth.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 8),
-                          child: _SelectionBubble(count: _selectedTeeth.length),
+                          child:
+                              _SelectionBubble(count: _selectedTeeth.length),
                         ),
-                      // The teeth chart
+                      // The 3D-style teeth chart
                       GlassCard(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
@@ -254,6 +355,8 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
                           numberingSystem: numberingSystem,
                           selectedTeeth: _selectedTeeth,
                           hoveredTooth: _hoveredTooth,
+                          toothStatuses: toothStatuses,
+                          procedureCounts: procedureCounts,
                           onHover: (value) =>
                               setState(() => _hoveredTooth = value),
                           onTap: (tooth) {
@@ -273,6 +376,7 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
                             if (!isDesktop && !_multiSelectEnabled) {
                               _openMobileActionSheet(
                                 patientId: selectedPatientId,
+                                doctorId: _selectedDoctorId,
                                 numberingSystem: numberingSystem,
                                 actions: actions,
                                 history: history,
@@ -292,13 +396,14 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
                           },
                         ),
                       ),
-                      // Info bubble for selected tooth
+                      // Tooth detail panel (shows procedures for selected tooth)
                       if (selectedToothMeta != null)
                         Padding(
                           padding: const EdgeInsets.only(top: 10),
-                          child: _ToothInfoBubble(
-                            meta: selectedToothMeta,
-                            numberingSystem: numberingSystem,
+                          child: ToothDetailPanel(
+                            toothMeta: selectedToothMeta,
+                            patientId: selectedPatientId,
+                            toothRecord: selectedToothRecord,
                           ),
                         ),
                       const SizedBox(height: 12),
@@ -318,6 +423,7 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
                               setState(() => _selectedAction = v),
                           onApply: () => _applyAction(
                             patientId: selectedPatientId,
+                            doctorId: _selectedDoctorId ?? '',
                             numberingSystem: numberingSystem,
                           ),
                           onClearSelection: () =>
@@ -333,7 +439,7 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
                 if (isDesktop) ...[
                   const SizedBox(width: 14),
                   SizedBox(
-                    width: 370,
+                    width: sidePanelWidth,
                     child: _DentalInfoPanel(
                       selectedToothMeta: selectedToothMeta,
                       selectedTeeth: _selectedTeeth,
@@ -347,11 +453,13 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
                           setState(() => _selectedAction = v),
                       onApply: () => _applyAction(
                         patientId: selectedPatientId,
+                        doctorId: _selectedDoctorId ?? '',
                         numberingSystem: numberingSystem,
                       ),
                       onClearSelection: () =>
                           setState(() => _selectedTeeth.clear()),
-                      onAddCustomAction: () => _showCustomActionDialog(actions),
+                      onAddCustomAction: () =>
+                          _showCustomActionDialog(actions),
                     ),
                   ),
                 ],
@@ -362,6 +470,7 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
 
   Future<void> _openMobileActionSheet({
     required String patientId,
+    required String? doctorId,
     required TeethNumberingSystem numberingSystem,
     required List<String> actions,
     required AsyncValue<List<DentalPlanItem>> history,
@@ -389,6 +498,7 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
           onApply: () {
             _applyAction(
               patientId: patientId,
+              doctorId: doctorId ?? '',
               numberingSystem: numberingSystem,
             );
             Navigator.pop(context);
@@ -401,7 +511,6 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
   }
 }
 
-/// Floating bubble showing "تم تحديد X أسنان"
 class _SelectionBubble extends StatelessWidget {
   const _SelectionBubble({required this.count});
   final int count;
@@ -428,7 +537,8 @@ class _SelectionBubble extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               'تم تحديد $count أسنان',
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              style:
+                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
             ),
           ],
         ),
@@ -437,81 +547,6 @@ class _SelectionBubble extends StatelessWidget {
   }
 }
 
-/// Info bubble showing selected tooth details
-class _ToothInfoBubble extends StatelessWidget {
-  const _ToothInfoBubble({required this.meta, required this.numberingSystem});
-  final ToothMeta meta;
-  final TeethNumberingSystem numberingSystem;
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: AlignmentDirectional.centerStart,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFF00E5FF).withValues(alpha: 0.3),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF00E5FF).withValues(alpha: 0.1),
-              blurRadius: 12,
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Center(
-                child: Text(
-                  '#${numberingSystem == TeethNumberingSystem.fdi ? meta.fdi : meta.universal}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12,
-                    color: Color(0xFF00E5FF),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  meta.nameAr,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-                Text(
-                  '#${meta.fdi} FDI / #${meta.universal} Universal',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.white.withValues(alpha: 0.6),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Desktop right-side information panel matching reference design
 class _DentalInfoPanel extends StatelessWidget {
   const _DentalInfoPanel({
     required this.selectedToothMeta,
@@ -550,39 +585,43 @@ class _DentalInfoPanel extends StatelessWidget {
       child: ListView(
         shrinkWrap: false,
         children: [
-          // Tooth info section
           Text(
             tr('selectedToothInfo'),
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+            style: Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 12),
           if (meta != null) ...[
             _InfoRow(label: 'الاسم (بالعربية):', value: meta.nameAr),
             const SizedBox(height: 6),
-            _InfoRow(label: 'الاسم الكلي (الإنجليزية):', value: meta.nameEn),
+            _InfoRow(
+                label: 'الاسم الكلي (الإنجليزية):', value: meta.nameEn),
             const SizedBox(height: 14),
-            // Numbering system display
             Text(
               tr('numberingSystem'),
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
             Row(
               children: [
                 _NumberingChip(
                   label: 'نظام FDI',
-                  isActive: numberingSystem == TeethNumberingSystem.fdi,
+                  isActive:
+                      numberingSystem == TeethNumberingSystem.fdi,
                 ),
                 const SizedBox(width: 8),
-                const Text('/', style: TextStyle(color: Colors.white54)),
+                const Text('/',
+                    style: TextStyle(color: Colors.white54)),
                 const SizedBox(width: 8),
                 _NumberingChip(
                   label: 'نظام يونيفرسال',
-                  isActive: numberingSystem == TeethNumberingSystem.universal,
+                  isActive:
+                      numberingSystem == TeethNumberingSystem.universal,
                 ),
               ],
             ),
@@ -592,22 +631,23 @@ class _DentalInfoPanel extends StatelessWidget {
                 numberingSystem == TeethNumberingSystem.fdi
                     ? meta.fdi
                     : meta.universal.toString(),
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineMedium
+                    ?.copyWith(fontWeight: FontWeight.w800),
               ),
             ),
           ] else
             Text(
               tr('selectToothToView'),
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: Colors.white54),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: Colors.white54),
             ),
           const SizedBox(height: 18),
           const Divider(height: 1),
           const SizedBox(height: 14),
-          // Actions section
           _DentalActionPanel(
             selectedTeeth: selectedTeeth,
             selectedAction: selectedAction,
@@ -648,7 +688,8 @@ class _InfoRow extends StatelessWidget {
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            style:
+                const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
           ),
         ),
       ],
@@ -688,7 +729,6 @@ class _NumberingChip extends StatelessWidget {
   }
 }
 
-/// Action panel with procedure chips, notes, and save button
 class _DentalActionPanel extends StatelessWidget {
   const _DentalActionPanel({
     required this.selectedTeeth,
@@ -718,10 +758,14 @@ class _DentalActionPanel extends StatelessWidget {
 
   static const _actionIcons = <String, IconData>{
     'قلع': Icons.content_cut_rounded,
+    'خلع': Icons.content_cut_rounded,
     'حشو': Icons.auto_fix_high_rounded,
+    'حشوة': Icons.auto_fix_high_rounded,
     'تنظيف': Icons.cleaning_services_rounded,
     'عصب': Icons.cable_rounded,
+    'علاج عصب': Icons.cable_rounded,
     'تقويم': Icons.grid_on_rounded,
+    'تركيب': Icons.architecture_rounded,
   };
 
   @override
@@ -734,12 +778,12 @@ class _DentalActionPanel extends StatelessWidget {
       children: [
         Text(
           tr('dentalActions'),
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 10),
-        // Action chips
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -748,7 +792,8 @@ class _DentalActionPanel extends StatelessWidget {
               final isActive = selectedAction == action;
               return _ActionChip(
                 label: action,
-                icon: _actionIcons[action] ?? Icons.medical_services_rounded,
+                icon: _actionIcons[action] ??
+                    Icons.medical_services_rounded,
                 isActive: isActive,
                 onTap: () => onActionChanged(isActive ? null : action),
               );
@@ -756,7 +801,6 @@ class _DentalActionPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        // Add custom action button
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(
@@ -764,17 +808,18 @@ class _DentalActionPanel extends StatelessWidget {
             icon: const Icon(Icons.add_rounded, size: 18),
             label: Text(tr('addCustomAction')),
             style: OutlinedButton.styleFrom(
-              side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+              side:
+                  BorderSide(color: Colors.white.withValues(alpha: 0.2)),
             ),
           ),
         ),
         const SizedBox(height: 14),
-        // Doctor notes
         Text(
           tr('doctorNotes'),
-          style: Theme.of(
-            context,
-          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+          style: Theme.of(context)
+              .textTheme
+              .titleSmall
+              ?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 6),
         TextField(
@@ -782,29 +827,28 @@ class _DentalActionPanel extends StatelessWidget {
           maxLines: 3,
           decoration: InputDecoration(
             hintText: '...',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14)),
           ),
         ),
         const SizedBox(height: 16),
-        // Save button
         SizedBox(
           width: double.infinity,
           child: GlassButton(
             label: '"${tr('save')}"',
             icon: Icons.arrow_forward_ios_rounded,
             expanded: true,
-            onPressed:
-                selectedTeeth.isEmpty ||
+            onPressed: selectedTeeth.isEmpty ||
                     selectedAction == null ||
                     editorState.isLoading
                 ? null
                 : onApply,
           ),
         ),
-        // History
         const SizedBox(height: 16),
         history.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
+          loading: () =>
+              const Center(child: CircularProgressIndicator()),
           error: (error, _) => Text(error.toString()),
           data: (items) {
             if (items.isEmpty) return const SizedBox.shrink();
@@ -816,7 +860,7 @@ class _DentalActionPanel extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 6),
-                ...items.take(6).map((item) {
+                ...items.take(8).map((item) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Row(
@@ -837,10 +881,12 @@ class _DentalActionPanel extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          DateFormats.dayMonthYear.format(item.timestamp),
+                          DateFormats.dayMonthYear
+                              .format(item.timestamp),
                           style: TextStyle(
                             fontSize: 10,
-                            color: Colors.white.withValues(alpha: 0.5),
+                            color:
+                                Colors.white.withValues(alpha: 0.5),
                           ),
                         ),
                       ],
@@ -878,7 +924,8 @@ class _ActionChip extends StatelessWidget {
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
             color: isActive
                 ? const Color(0xFF00E5FF).withValues(alpha: 0.2)
@@ -893,7 +940,8 @@ class _ActionChip extends StatelessWidget {
             boxShadow: isActive
                 ? [
                     BoxShadow(
-                      color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
+                      color: const Color(0xFF00E5FF)
+                          .withValues(alpha: 0.15),
                       blurRadius: 8,
                     ),
                   ]
@@ -905,15 +953,20 @@ class _ActionChip extends StatelessWidget {
               Icon(
                 icon,
                 size: 16,
-                color: isActive ? const Color(0xFF00E5FF) : Colors.white70,
+                color: isActive
+                    ? const Color(0xFF00E5FF)
+                    : Colors.white70,
               ),
               const SizedBox(width: 6),
               Text(
                 label,
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                  color: isActive ? const Color(0xFF00E5FF) : Colors.white70,
+                  fontWeight:
+                      isActive ? FontWeight.w700 : FontWeight.w500,
+                  color: isActive
+                      ? const Color(0xFF00E5FF)
+                      : Colors.white70,
                 ),
               ),
             ],

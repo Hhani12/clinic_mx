@@ -33,14 +33,40 @@ class PaymentsPage extends ConsumerWidget {
       ),
       body: Column(
         children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _TotalCard(title: tr('today'), value: totals['day'] ?? 0),
-              _TotalCard(title: tr('week'), value: totals['week'] ?? 0),
-              _TotalCard(title: tr('month'), value: totals['month'] ?? 0),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const spacing = 10.0;
+              final columns = constraints.maxWidth >= 1024
+                  ? 3
+                  : constraints.maxWidth >= 680
+                  ? 2
+                  : 1;
+              final cardWidth =
+                  ((constraints.maxWidth - ((columns - 1) * spacing)) / columns)
+                      .clamp(180.0, constraints.maxWidth)
+                      .toDouble();
+              return Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                children: [
+                  _TotalCard(
+                    width: cardWidth,
+                    title: tr('today'),
+                    value: totals['day'] ?? 0,
+                  ),
+                  _TotalCard(
+                    width: cardWidth,
+                    title: tr('week'),
+                    value: totals['week'] ?? 0,
+                  ),
+                  _TotalCard(
+                    width: cardWidth,
+                    title: tr('month'),
+                    value: totals['month'] ?? 0,
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 14),
           Expanded(
@@ -119,15 +145,20 @@ class PaymentsPage extends ConsumerWidget {
 }
 
 class _TotalCard extends StatelessWidget {
-  const _TotalCard({required this.title, required this.value});
+  const _TotalCard({
+    required this.width,
+    required this.title,
+    required this.value,
+  });
 
+  final double width;
   final String title;
   final double value;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 180,
+      width: width,
       child: GlassCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

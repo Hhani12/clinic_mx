@@ -14,6 +14,7 @@ class Appointment {
     required this.reason,
     required this.status,
     required this.doctorId,
+    required this.doctorName,
     required this.createdAt,
     required this.updatedAt,
     this.reminderSent = false,
@@ -29,6 +30,7 @@ class Appointment {
   final String reason;
   final VisitStatus status;
   final String doctorId;
+  final String doctorName;
   final DateTime createdAt;
   final DateTime updatedAt;
   final bool reminderSent;
@@ -46,6 +48,7 @@ class Appointment {
     String? reason,
     VisitStatus? status,
     String? doctorId,
+    String? doctorName,
     DateTime? createdAt,
     DateTime? updatedAt,
     bool? reminderSent,
@@ -61,6 +64,7 @@ class Appointment {
       reason: reason ?? this.reason,
       status: status ?? this.status,
       doctorId: doctorId ?? this.doctorId,
+      doctorName: doctorName ?? this.doctorName,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       reminderSent: reminderSent ?? this.reminderSent,
@@ -79,6 +83,7 @@ class Appointment {
       'reason': reason,
       'status': status.value,
       'doctorId': doctorId,
+      'doctorName': doctorName,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
       'reminderSent': reminderSent,
@@ -100,6 +105,7 @@ class Appointment {
       reason: map['reason'] as String? ?? '',
       status: VisitStatusX.fromString(map['status'] as String?),
       doctorId: map['doctorId'] as String? ?? '',
+      doctorName: map['doctorName'] as String? ?? '',
       createdAt: _asDateTime(map['createdAt']) ?? DateTime.now(),
       updatedAt: _asDateTime(map['updatedAt']) ?? DateTime.now(),
       reminderSent: map['reminderSent'] as bool? ?? false,

@@ -1,5 +1,5 @@
 name: clinic
-description: "Clinic MX - Production-grade clinic management app."
+description: "Locas Clinic - Production-grade clinic management app."
 publish_to: "none"
 version: 1.0.0+1
 
@@ -41,3 +41,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assests/images/
