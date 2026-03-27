@@ -11,7 +11,9 @@ class RoutePaths {
   static const patientEdit = '/patients/:patientId/edit';
   static const appointments = '/appointments';
   static const todayVisits = '/today-visits';
+  static const doctors = '/doctors';
   static const dental = '/dental-chart';
   static const payments = '/payments';
   static const settings = '/settings';
+  static const expired = '/expired';
 }

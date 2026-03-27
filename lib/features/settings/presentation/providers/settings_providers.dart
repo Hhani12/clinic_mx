@@ -10,7 +10,14 @@ import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/repositories/settings_repository_impl.dart';
 import '../../domain/entities/clinic.dart';
 import '../../domain/entities/clinic_settings.dart';
+import '../../domain/entities/staff_profile.dart';
 import '../../domain/repositories/settings_repository.dart';
+
+final staffProfilesProvider = StreamProvider<List<StaffProfile>>((ref) {
+  final clinicId = ref.watch(currentClinicIdProvider);
+  if (clinicId == null || clinicId.isEmpty) return Stream.value([]);
+  return ref.watch(settingsRepositoryProvider).watchStaffProfiles(clinicId);
+});
 
 final settingsRepositoryProvider = Provider<SettingsRepository>((ref) {
   return SettingsRepositoryImpl(
@@ -41,6 +48,13 @@ final teethNumberingProvider = Provider<TeethNumberingSystem>((ref) {
 final toothActionsProvider = Provider<List<String>>((ref) {
   return ref.watch(clinicSettingsProvider).value?.toothActions ??
       const ['قلع', 'حشو', 'تنظيف', 'تقويم', 'عصب'];
+});
+
+/// Whether the current clinic subscription is expired
+final clinicExpiredProvider = Provider<bool>((ref) {
+  final clinic = ref.watch(clinicInfoProvider).valueOrNull;
+  if (clinic == null) return false;
+  return clinic.isExpired;
 });
 
 final clinicUsersProvider = StreamProvider<List<AppUserProfile>>((ref) {
@@ -101,6 +115,42 @@ class SettingsEditorController extends AutoDisposeAsyncNotifier<void> {
     );
   }
 
+  Future<void> saveStaffProfile({
+    required String clinicId,
+    required StaffProfile profile,
+  }) async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(
+      () => ref
+          .read(settingsRepositoryProvider)
+          .saveStaffProfile(clinicId: clinicId, profile: profile),
+    );
+  }
+
+  Future<void> deleteStaffProfile({
+    required String clinicId,
+    required String profileId,
+  }) async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(
+      () => ref
+          .read(settingsRepositoryProvider)
+          .deleteStaffProfile(clinicId: clinicId, profileId: profileId),
+    );
+  }
+
+  Future<void> reactivateClinic({
+    required String clinicId,
+    required String reactivatedBy,
+  }) async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(
+      () => ref
+          .read(settingsRepositoryProvider)
+          .reactivateClinic(clinicId: clinicId, reactivatedBy: reactivatedBy),
+    );
+  }
+
   static String? _clean(String? value) {
     if (value == null) return null;
     final trimmed = value.trim();
@@ -110,5 +160,5 @@ class SettingsEditorController extends AutoDisposeAsyncNotifier<void> {
 
 final settingsEditorControllerProvider =
     AutoDisposeAsyncNotifierProvider<SettingsEditorController, void>(
-  SettingsEditorController.new,
-);
+      SettingsEditorController.new,
+    );

@@ -35,85 +35,129 @@ class PatientProfilePage extends ConsumerWidget {
 
           return ListView(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      patient.displayName,
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                  ),
-                  FilledButton.tonalIcon(
-                    onPressed: () => context.go(
-                      RoutePaths.patientEdit.replaceFirst(
-                        ':patientId',
-                        patient.id,
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  if (constraints.maxWidth < 640) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          patient.displayName,
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                        const SizedBox(height: 8),
+                        FilledButton.tonalIcon(
+                          onPressed: () => context.go(
+                            RoutePaths.patientEdit.replaceFirst(
+                              ':patientId',
+                              patient.id,
+                            ),
+                          ),
+                          icon: const Icon(Icons.edit_rounded),
+                          label: Text(context.l10n.tr('editPatient')),
+                        ),
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          patient.displayName,
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
                       ),
-                    ),
-                    icon: const Icon(Icons.edit_rounded),
-                    label: Text(context.l10n.tr('editPatient')),
-                  ),
-                ],
+                      FilledButton.tonalIcon(
+                        onPressed: () => context.go(
+                          RoutePaths.patientEdit.replaceFirst(
+                            ':patientId',
+                            patient.id,
+                          ),
+                        ),
+                        icon: const Icon(Icons.edit_rounded),
+                        label: Text(context.l10n.tr('editPatient')),
+                      ),
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  _InfoCard(
-                    title: context.l10n.tr('phone'),
-                    value: patient.phoneNumber,
-                    width: 280,
-                  ),
-                  _InfoCard(
-                    title: context.l10n.tr('city'),
-                    value: patient.city ?? '-',
-                    width: 220,
-                  ),
-                  _InfoCard(
-                    title: context.l10n.tr('district'),
-                    value: patient.district ?? '-',
-                    width: 220,
-                  ),
-                  _InfoCard(
-                    title: context.l10n.tr('dob'),
-                    value: patient.dob == null
-                        ? '-'
-                        : DateFormats.dayMonthYear.format(patient.dob!),
-                    width: 220,
-                  ),
-                ],
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  const spacing = 12.0;
+                  final columns = constraints.maxWidth >= 1080
+                      ? 4
+                      : constraints.maxWidth >= 720
+                      ? 2
+                      : 1;
+                  final cardWidth =
+                      ((constraints.maxWidth - ((columns - 1) * spacing)) /
+                              columns)
+                          .clamp(220.0, constraints.maxWidth)
+                          .toDouble();
+                  return Wrap(
+                    spacing: spacing,
+                    runSpacing: spacing,
+                    children: [
+                      SizedBox(
+                        width: cardWidth,
+                        child: _InfoCard(
+                          title: context.l10n.tr('phone'),
+                          value: patient.phoneNumber,
+                        ),
+                      ),
+                      SizedBox(
+                        width: cardWidth,
+                        child: _InfoCard(
+                          title: context.l10n.tr('city'),
+                          value: patient.city ?? '-',
+                        ),
+                      ),
+                      SizedBox(
+                        width: cardWidth,
+                        child: _InfoCard(
+                          title: context.l10n.tr('district'),
+                          value: patient.district ?? '-',
+                        ),
+                      ),
+                      SizedBox(
+                        width: cardWidth,
+                        child: _InfoCard(
+                          title: context.l10n.tr('dob'),
+                          value: patient.dob == null
+                              ? '-'
+                              : DateFormats.dayMonthYear.format(patient.dob!),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 12),
               _InfoCard(
                 title: context.l10n.tr('reasonForVisit'),
                 value: patient.reasonForVisit ?? '-',
-                width: double.infinity,
               ),
               const SizedBox(height: 12),
               _InfoCard(
                 title: context.l10n.tr('medicalNotes'),
                 value: patient.medicalNotes ?? '-',
-                width: double.infinity,
               ),
               const SizedBox(height: 12),
               _InfoCard(
                 title: context.l10n.tr('allergies'),
                 value: patient.allergies.isEmpty
                     ? '-'
-                    : patient.allergies.join('، '),
-                width: double.infinity,
+                    : patient.allergies.join(', '),
               ),
               const SizedBox(height: 12),
               _InfoCard(
                 title: context.l10n.tr('chronicDiseases'),
                 value: patient.chronicDiseases.isEmpty
                     ? '-'
-                    : patient.chronicDiseases.join('، '),
-                width: double.infinity,
+                    : patient.chronicDiseases.join(', '),
               ),
               const SizedBox(height: 12),
-              // Investigation images section
               InvestigationSection(patientId: patient.id),
               const SizedBox(height: 12),
               GlassCard(
@@ -168,29 +212,21 @@ class PatientProfilePage extends ConsumerWidget {
 }
 
 class _InfoCard extends StatelessWidget {
-  const _InfoCard({
-    required this.title,
-    required this.value,
-    required this.width,
-  });
+  const _InfoCard({required this.title, required this.value});
 
   final String title;
   final String value;
-  final double width;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      child: GlassCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 4),
-            Text(value, style: Theme.of(context).textTheme.titleMedium),
-          ],
-        ),
+    return GlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 4),
+          Text(value, style: Theme.of(context).textTheme.titleMedium),
+        ],
       ),
     );
   }

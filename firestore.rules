@@ -65,7 +65,7 @@ service cloud.firestore {
 
     match /clinics/{clinicId} {
       allow read: if inClinic(clinicId);
-      allow create: if false;
+      allow create: if isSignedIn() && isActiveUser() && userClinicId() == clinicId && userRole() == 'admin';
       allow update: if canManageClinic(clinicId);
       allow delete: if false;
 
@@ -91,6 +91,8 @@ service cloud.firestore {
           request.resource.data.patientId is string &&
           request.resource.data.patientName is string &&
           validE164(request.resource.data.patientPhone) &&
+          request.resource.data.doctorId is string &&
+          request.resource.data.doctorName is string &&
           request.resource.data.startAt is timestamp &&
           request.resource.data.durationMinutes is int &&
           request.resource.data.durationMinutes >= 5 &&
@@ -103,6 +105,20 @@ service cloud.firestore {
             'no_show',
             'cancelled',
           ];
+        allow delete: if canManageClinic(clinicId);
+      }
+
+      match /doctors/{doctorId} {
+        allow read: if inClinic(clinicId);
+        allow create, update: if canManageClinic(clinicId) &&
+          request.resource.data.id == doctorId &&
+          request.resource.data.clinicId == clinicId &&
+          validRequiredText(request.resource.data.fullName, 3, 120) &&
+          request.resource.data.monthlySalaryIqd is number &&
+          request.resource.data.monthlySalaryIqd >= 0 &&
+          request.resource.data.commissionPercent is number &&
+          request.resource.data.commissionPercent >= 0 &&
+          request.resource.data.commissionPercent <= 100;
         allow delete: if canManageClinic(clinicId);
       }
 
@@ -136,6 +152,16 @@ service cloud.firestore {
         allow delete: if canManageClinic(clinicId);
       }
 
+      match /toothRecords/{recordId} {
+        allow read: if inClinic(clinicId);
+        allow create, update: if canManageClinic(clinicId) &&
+          request.resource.data.patientId is string &&
+          request.resource.data.toothId is string &&
+          request.resource.data.status is string &&
+          request.resource.data.procedures is list;
+        allow delete: if canManageClinic(clinicId);
+      }
+
       match /reminderLogs/{logId} {
         allow read: if inClinic(clinicId);
         allow write: if false;
@@ -144,6 +170,17 @@ service cloud.firestore {
       match /settings/{docId} {
         allow read: if inClinic(clinicId);
         allow write: if canManageClinic(clinicId);
+      }
+
+      match /staff/{staffId} {
+        allow read: if inClinic(clinicId);
+        allow write: if canManageClinic(clinicId);
+      }
+
+      match /investigations/{investigationId} {
+        allow read: if inClinic(clinicId);
+        allow create, update: if canManageClinic(clinicId);
+        allow delete: if canManageClinic(clinicId);
       }
     }
   }

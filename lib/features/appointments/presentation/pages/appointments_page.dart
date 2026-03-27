@@ -97,11 +97,14 @@ class AppointmentsPage extends ConsumerWidget {
                     final appointment = sorted[index];
                     return _AppointmentTile(
                       appointment: appointment,
-                      onEdit: () => _openForm(context, appointment: appointment),
+                      onEdit: () =>
+                          _openForm(context, appointment: appointment),
                       onDelete: clinicId == null
                           ? null
                           : () => ref
-                                .read(appointmentEditorControllerProvider.notifier)
+                                .read(
+                                  appointmentEditorControllerProvider.notifier,
+                                )
                                 .delete(
                                   clinicId: clinicId,
                                   appointmentId: appointment.id,
@@ -155,6 +158,10 @@ class _AppointmentTile extends StatelessWidget {
                 Text(
                   '${DateFormats.full.format(appointment.startAt)} - ${appointment.durationMinutes}m',
                 ),
+                if (appointment.doctorName.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text('الطبيب: ${appointment.doctorName}'),
+                ],
                 const SizedBox(height: 6),
                 GlassBadge(
                   label: appointment.status.labelAr,

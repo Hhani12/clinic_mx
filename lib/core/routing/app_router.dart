@@ -6,11 +6,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/appointments/presentation/pages/appointments_page.dart';
 import '../../features/appointments/presentation/pages/today_visits_page.dart';
+import '../../features/auth/presentation/pages/expired_clinic_page.dart';
 import '../../features/auth/presentation/pages/forgot_password_page.dart';
 import '../../features/auth/presentation/pages/login_page.dart';
 import '../../features/auth/presentation/pages/register_page.dart';
 import '../../features/auth/presentation/providers/auth_providers.dart';
+import '../../features/settings/presentation/providers/settings_providers.dart';
 import '../../features/dashboard/presentation/pages/dashboard_page.dart';
+import '../../features/doctors/presentation/pages/doctors_page.dart';
 import '../../features/dental/presentation/pages/dental_chart_page.dart';
 import '../../features/patients/presentation/pages/patient_form_page.dart';
 import '../../features/patients/presentation/pages/patient_profile_page.dart';
@@ -43,6 +46,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           location == RoutePaths.login ||
           location == RoutePaths.register ||
           location == RoutePaths.forgotPassword;
+      final isExpiredRoute = location == RoutePaths.expired;
 
       if (!isLoggedIn && !isAuthRoute) {
         return RoutePaths.login;
@@ -50,6 +54,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       if (isLoggedIn && isAuthRoute) {
         return RoutePaths.dashboard;
+      }
+
+      // Check clinic expiry for logged-in users on non-auth routes
+      if (isLoggedIn && !isAuthRoute && !isExpiredRoute) {
+        final isExpired = ref.read(clinicExpiredProvider);
+        if (isExpired) {
+          return RoutePaths.expired;
+        }
+      }
+
+      // If clinic is no longer expired, redirect away from expired page
+      if (isLoggedIn && isExpiredRoute) {
+        final isExpired = ref.read(clinicExpiredProvider);
+        if (!isExpired) {
+          return RoutePaths.dashboard;
+        }
       }
 
       if (user != null && location == RoutePaths.settings) {
@@ -119,6 +139,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             _fadeTransition(state: state, child: const TodayVisitsPage()),
       ),
       GoRoute(
+        path: RoutePaths.doctors,
+        pageBuilder: (context, state) =>
+            _fadeTransition(state: state, child: const DoctorsPage()),
+      ),
+      GoRoute(
         path: RoutePaths.dental,
         pageBuilder: (context, state) =>
             _fadeTransition(state: state, child: const DentalChartPage()),
@@ -132,6 +157,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: RoutePaths.settings,
         pageBuilder: (context, state) =>
             _fadeTransition(state: state, child: const SettingsPage()),
+      ),
+      GoRoute(
+        path: RoutePaths.expired,
+        pageBuilder: (context, state) =>
+            _fadeTransition(state: state, child: const ExpiredClinicPage()),
       ),
     ],
     errorBuilder: (context, state) =>

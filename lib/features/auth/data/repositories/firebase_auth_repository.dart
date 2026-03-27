@@ -74,10 +74,35 @@ class FirebaseAuthRepository implements AuthRepository {
       );
 
       if (userCredential.user != null) {
-        await _firestore
-            .collection(FirestorePaths.users)
-            .doc(userCredential.user!.uid)
-            .set(profile.copyWith(uid: userCredential.user!.uid).toMap());
+        final uid = userCredential.user!.uid;
+        final batch = _firestore.batch();
+
+        // Create user profile
+        batch.set(
+          _firestore.collection(FirestorePaths.users).doc(uid),
+          profile.copyWith(uid: uid).toMap(),
+        );
+
+        // Create clinic document with 1-year expiry if it doesn't exist
+        final clinicRef = _firestore
+            .collection(FirestorePaths.clinics)
+            .doc(profile.clinicId);
+        final clinicSnap = await clinicRef.get();
+        if (!clinicSnap.exists) {
+          final now = DateTime.now();
+          final expiresAt = DateTime(now.year + 1, now.month, now.day);
+          batch.set(clinicRef, {
+            'id': profile.clinicId,
+            'name': profile.clinicId,
+            'createdAt': Timestamp.fromDate(now),
+            'expiresAt': Timestamp.fromDate(expiresAt),
+            'active': true,
+            'reactivationHistory': [],
+            'updatedAt': Timestamp.fromDate(now),
+          });
+        }
+
+        await batch.commit();
       }
     } on FirebaseAuthException catch (e) {
       throw AppException.fromAuth(e);

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -43,8 +44,11 @@ class _PatientFormPageState extends ConsumerState<PatientFormPage> {
   DateTime? _dob;
   bool _didPopulate = false;
 
+  Timer? _autoSaveTimer;
+
   @override
   void dispose() {
+    _autoSaveTimer?.cancel();
     _firstNameController.dispose();
     _fatherNameController.dispose();
     _lastNameController.dispose();
@@ -59,6 +63,44 @@ class _PatientFormPageState extends ConsumerState<PatientFormPage> {
     super.dispose();
   }
 
+  void _onFieldChanged() {
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = Timer(const Duration(seconds: 3), () {
+      if (_formKey.currentState?.validate() ?? false) {
+        _saveAuto();
+      }
+    });
+  }
+
+  Future<void> _saveAuto() async {
+    final notifier = ref.read(patientFormControllerProvider.notifier);
+    final fullPhone = IraqiPhoneField.fullNumber(_phoneLocalController.text);
+
+    // Auto-save logic (doesn't navigate away)
+    if (widget.isEdit) {
+      final patient = ref.read(patientByIdProvider(widget.patientId!)).value;
+      if (patient != null) {
+        await notifier.updatePatient(
+          patient,
+          firstName: _firstNameController.text,
+          fatherName: _fatherNameController.text,
+          lastName: _lastNameController.text,
+          phoneNumber: fullPhone,
+          city: _selectedGovernorate,
+          district: _districtController.text,
+          detailedAddress: _addressController.text,
+          dob: _dob,
+          gender: _gender,
+          nationalId: _nationalIdController.text,
+          reasonForVisit: _reasonController.text,
+          medicalNotes: _medicalNotesController.text,
+          allergies: _allergiesController.text.split(','),
+          chronicDiseases: _chronicController.text.split(','),
+        );
+      }
+    }
+  }
+
   Future<void> _pickDob() async {
     final picked = await showDatePicker(
       context: context,
@@ -68,6 +110,7 @@ class _PatientFormPageState extends ConsumerState<PatientFormPage> {
     );
     if (picked != null) {
       setState(() => _dob = picked);
+      _onFieldChanged();
     }
   }
 
@@ -78,8 +121,9 @@ class _PatientFormPageState extends ConsumerState<PatientFormPage> {
     _fatherNameController.text = patient.fatherName;
     _lastNameController.text = patient.lastName;
     // Extract local part from full phone number
-    _phoneLocalController.text =
-        IraqiPhoneField.extractLocal(patient.phoneNumber);
+    _phoneLocalController.text = IraqiPhoneField.extractLocal(
+      patient.phoneNumber,
+    );
     _selectedGovernorate = patient.city;
     _districtController.text = patient.district ?? '';
     _addressController.text = patient.detailedAddress ?? '';
@@ -93,14 +137,14 @@ class _PatientFormPageState extends ConsumerState<PatientFormPage> {
   }
 
   Future<void> _save([Patient? patient]) async {
+    _autoSaveTimer?.cancel();
     if (!_formKey.currentState!.validate()) return;
 
     final notifier = ref.read(patientFormControllerProvider.notifier);
     final allergies = _allergiesController.text.split(',');
     final chronic = _chronicController.text.split(',');
     // Build full E.164 phone from local part
-    final fullPhone =
-        IraqiPhoneField.fullNumber(_phoneLocalController.text);
+    final fullPhone = IraqiPhoneField.fullNumber(_phoneLocalController.text);
 
     if (patient == null) {
       final id = await notifier.create(
@@ -152,17 +196,19 @@ class _PatientFormPageState extends ConsumerState<PatientFormPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(context.l10n.tr('savedSuccessfully'))),
     );
-    context.go(RoutePaths.patientProfile.replaceFirst(':patientId', patient.id));
+    context.go(
+      RoutePaths.patientProfile.replaceFirst(':patientId', patient.id),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final formState = ref.watch(patientFormControllerProvider);
     ref.listen(patientFormControllerProvider, (prev, next) {
-      if (next.hasError) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(next.error.toString())),
-        );
+      if (next.hasError && !next.isLoading) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(next.error.toString())));
       }
     });
 
@@ -173,7 +219,8 @@ class _PatientFormPageState extends ConsumerState<PatientFormPage> {
           ? ref
                 .watch(patientByIdProvider(widget.patientId!))
                 .when(
-                  loading: () => const Center(child: CircularProgressIndicator()),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
                   error: (error, _) => Center(child: Text(error.toString())),
                   data: (patient) {
                     if (patient == null) {
@@ -187,8 +234,10 @@ class _PatientFormPageState extends ConsumerState<PatientFormPage> {
                       lastNameController: _lastNameController,
                       phoneLocalController: _phoneLocalController,
                       selectedGovernorate: _selectedGovernorate,
-                      onGovernorateChanged: (v) =>
-                          setState(() => _selectedGovernorate = v),
+                      onGovernorateChanged: (v) {
+                        setState(() => _selectedGovernorate = v);
+                        _onFieldChanged();
+                      },
                       districtController: _districtController,
                       addressController: _addressController,
                       nationalIdController: _nationalIdController,
@@ -199,7 +248,11 @@ class _PatientFormPageState extends ConsumerState<PatientFormPage> {
                       gender: _gender,
                       dob: _dob,
                       onPickDob: _pickDob,
-                      onGenderChanged: (value) => setState(() => _gender = value),
+                      onGenderChanged: (value) {
+                        setState(() => _gender = value);
+                        _onFieldChanged();
+                      },
+                      onFieldChanged: _onFieldChanged,
                       onSave: formState.isLoading ? null : () => _save(patient),
                     );
                   },
@@ -211,8 +264,10 @@ class _PatientFormPageState extends ConsumerState<PatientFormPage> {
               lastNameController: _lastNameController,
               phoneLocalController: _phoneLocalController,
               selectedGovernorate: _selectedGovernorate,
-              onGovernorateChanged: (v) =>
-                  setState(() => _selectedGovernorate = v),
+              onGovernorateChanged: (v) {
+                setState(() => _selectedGovernorate = v);
+                _onFieldChanged();
+              },
               districtController: _districtController,
               addressController: _addressController,
               nationalIdController: _nationalIdController,
@@ -223,7 +278,11 @@ class _PatientFormPageState extends ConsumerState<PatientFormPage> {
               gender: _gender,
               dob: _dob,
               onPickDob: _pickDob,
-              onGenderChanged: (value) => setState(() => _gender = value),
+              onGenderChanged: (value) {
+                setState(() => _gender = value);
+                _onFieldChanged();
+              },
+              onFieldChanged: _onFieldChanged,
               onSave: formState.isLoading ? null : () => _save(),
             ),
     );
@@ -250,6 +309,7 @@ class _PatientForm extends StatelessWidget {
     required this.dob,
     required this.onPickDob,
     required this.onGenderChanged,
+    required this.onFieldChanged,
     required this.onSave,
   });
 
@@ -271,6 +331,7 @@ class _PatientForm extends StatelessWidget {
   final DateTime? dob;
   final VoidCallback onPickDob;
   final ValueChanged<PatientGender?> onGenderChanged;
+  final VoidCallback onFieldChanged;
   final VoidCallback? onSave;
 
   @override
@@ -280,194 +341,213 @@ class _PatientForm extends StatelessWidget {
       key: formKey,
       child: ListView(
         children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _sizedField(
-                width: 300,
-                child: TextFormField(
-                  controller: firstNameController,
-                  decoration: InputDecoration(labelText: tr('firstName')),
-                  validator: (value) {
-                    final result = Validators.arabicName(value);
-                    if (result == 'required') return tr('requiredField');
-                    if (result == 'invalidArabicName') return tr(result!);
-                    return null;
-                  },
-                ),
-              ),
-              _sizedField(
-                width: 300,
-                child: TextFormField(
-                  controller: fatherNameController,
-                  decoration: InputDecoration(labelText: tr('fatherName')),
-                  validator: (value) {
-                    final result = Validators.arabicName(value);
-                    if (result == 'required') return tr('requiredField');
-                    if (result == 'invalidArabicName') return tr(result!);
-                    return null;
-                  },
-                ),
-              ),
-              _sizedField(
-                width: 300,
-                child: TextFormField(
-                  controller: lastNameController,
-                  decoration: InputDecoration(labelText: tr('lastName')),
-                  validator: (value) {
-                    final result = Validators.arabicName(value);
-                    if (result == 'required') return tr('requiredField');
-                    if (result == 'invalidArabicName') return tr(result!);
-                    return null;
-                  },
-                ),
-              ),
-              // Iraqi phone field with +964 prefix
-              _sizedField(
-                width: 300,
-                child: IraqiPhoneField(
-                  controller: phoneLocalController,
-                  labelText: tr('phone'),
-                  validator: (value) {
-                    final result = Validators.iraqiLocalPhone(value);
-                    if (result == 'required') return tr('requiredField');
-                    if (result == 'invalidPhone') return tr(result!);
-                    return null;
-                  },
-                ),
-              ),
-              _sizedField(
-                width: 200,
-                child: DropdownButtonFormField<PatientGender>(
-                  key: ValueKey('gender_${gender?.name ?? 'none'}'),
-                  initialValue: gender,
-                  items: [
-                    DropdownMenuItem(
-                      value: PatientGender.male,
-                      child: Text(tr('male')),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              final fullSpan = _columnsForWidth(width) >= 2 ? 2 : 1;
+              return Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  _sizedField(
+                    width: _fieldWidth(width),
+                    child: TextFormField(
+                      controller: firstNameController,
+                      onChanged: (_) => onFieldChanged(),
+                      decoration: InputDecoration(labelText: tr('firstName')),
+                      validator: (value) {
+                        final result = Validators.arabicName(value);
+                        if (result == 'required') return tr('requiredField');
+                        if (result == 'invalidArabicName') return tr(result!);
+                        return null;
+                      },
                     ),
-                    DropdownMenuItem(
-                      value: PatientGender.female,
-                      child: Text(tr('female')),
+                  ),
+                  _sizedField(
+                    width: _fieldWidth(width),
+                    child: TextFormField(
+                      controller: fatherNameController,
+                      onChanged: (_) => onFieldChanged(),
+                      decoration: InputDecoration(labelText: tr('fatherName')),
+                      validator: (value) {
+                        final result = Validators.arabicName(value);
+                        if (result == 'required') return tr('requiredField');
+                        if (result == 'invalidArabicName') return tr(result!);
+                        return null;
+                      },
                     ),
-                  ],
-                  onChanged: onGenderChanged,
-                  decoration: InputDecoration(
-                    labelText: '${tr('gender')} (${tr('optional')})',
                   ),
-                ),
-              ),
-              _sizedField(
-                width: 220,
-                child: OutlinedButton.icon(
-                  onPressed: onPickDob,
-                  icon: const Icon(Icons.calendar_today_rounded),
-                  label: Text(
-                    dob == null
-                        ? '${tr('dob')} (${tr('optional')})'
-                        : '${tr('dob')}: ${dob!.year}/${dob!.month}/${dob!.day}',
+                  _sizedField(
+                    width: _fieldWidth(width),
+                    child: TextFormField(
+                      controller: lastNameController,
+                      onChanged: (_) => onFieldChanged(),
+                      decoration: InputDecoration(labelText: tr('lastName')),
+                      validator: (value) {
+                        final result = Validators.arabicName(value);
+                        if (result == 'required') return tr('requiredField');
+                        if (result == 'invalidArabicName') return tr(result!);
+                        return null;
+                      },
+                    ),
                   ),
-                ),
-              ),
-              // Governorate dropdown instead of free text city
-              _sizedField(
-                width: 300,
-                child: DropdownButtonFormField<String>(
-                  key: ValueKey('gov_${selectedGovernorate ?? 'none'}'),
-                  initialValue: selectedGovernorate,
-                  items: IraqGovernorate.all
-                      .map(
-                        (gov) => DropdownMenuItem(
-                          value: gov.ar,
-                          child: Text('${gov.ar} (${gov.en})'),
+                  _sizedField(
+                    width: _fieldWidth(width),
+                    child: IraqiPhoneField(
+                      controller: phoneLocalController,
+                      onChanged: (_) => onFieldChanged(),
+                      labelText: tr('phone'),
+                      validator: (value) {
+                        final result = Validators.iraqiLocalPhone(value);
+                        if (result == 'required') return tr('requiredField');
+                        if (result == 'invalidPhone') return tr(result!);
+                        return null;
+                      },
+                    ),
+                  ),
+                  _sizedField(
+                    width: _fieldWidth(width),
+                    child: DropdownButtonFormField<PatientGender>(
+                      key: ValueKey('gender_${gender?.name ?? 'none'}'),
+                      initialValue: gender,
+                      items: [
+                        DropdownMenuItem(
+                          value: PatientGender.male,
+                          child: Text(tr('male')),
                         ),
-                      )
-                      .toList(),
-                  onChanged: onGovernorateChanged,
-                  decoration: InputDecoration(
-                    labelText: '${tr('governorate')} (${tr('optional')})',
+                        DropdownMenuItem(
+                          value: PatientGender.female,
+                          child: Text(tr('female')),
+                        ),
+                      ],
+                      onChanged: onGenderChanged,
+                      decoration: InputDecoration(
+                        labelText: '${tr('gender')} (${tr('optional')})',
+                      ),
+                    ),
                   ),
-                  isExpanded: true,
-                ),
-              ),
-              _sizedField(
-                width: 300,
-                child: TextFormField(
-                  controller: districtController,
-                  decoration: InputDecoration(
-                    labelText: '${tr('district')} (${tr('optional')})',
+                  _sizedField(
+                    width: _fieldWidth(width),
+                    child: OutlinedButton.icon(
+                      onPressed: onPickDob,
+                      icon: const Icon(Icons.calendar_today_rounded),
+                      label: Text(
+                        dob == null
+                            ? '${tr('dob')} (${tr('optional')})'
+                            : '${tr('dob')}: ${dob!.year}/${dob!.month}/${dob!.day}',
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              _sizedField(
-                width: 612,
-                child: TextFormField(
-                  controller: addressController,
-                  decoration: InputDecoration(
-                    labelText: '${tr('detailedAddress')} (${tr('optional')})',
+                  _sizedField(
+                    width: _fieldWidth(width),
+                    child: DropdownButtonFormField<String>(
+                      key: ValueKey('gov_${selectedGovernorate ?? 'none'}'),
+                      initialValue: selectedGovernorate,
+                      items: IraqGovernorate.all
+                          .map(
+                            (gov) => DropdownMenuItem(
+                              value: gov.ar,
+                              child: Text('${gov.ar} (${gov.en})'),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: onGovernorateChanged,
+                      decoration: InputDecoration(
+                        labelText: '${tr('governorate')} (${tr('optional')})',
+                      ),
+                      isExpanded: true,
+                    ),
                   ),
-                ),
-              ),
-              _sizedField(
-                width: 300,
-                child: TextFormField(
-                  controller: nationalIdController,
-                  decoration: InputDecoration(
-                    labelText: '${tr('nationalId')} (${tr('optional')})',
+                  _sizedField(
+                    width: _fieldWidth(width),
+                    child: TextFormField(
+                      controller: districtController,
+                      onChanged: (_) => onFieldChanged(),
+                      decoration: InputDecoration(
+                        labelText: '${tr('district')} (${tr('optional')})',
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              _sizedField(
-                width: 612,
-                child: TextFormField(
-                  controller: reasonController,
-                  decoration: InputDecoration(
-                    labelText: '${tr('reasonForVisit')} (${tr('optional')})',
+                  _sizedField(
+                    width: _fieldWidth(width, span: fullSpan),
+                    child: TextFormField(
+                      controller: addressController,
+                      onChanged: (_) => onFieldChanged(),
+                      decoration: InputDecoration(
+                        labelText:
+                            '${tr('detailedAddress')} (${tr('optional')})',
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              _sizedField(
-                width: 612,
-                child: TextFormField(
-                  controller: medicalNotesController,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    labelText: '${tr('medicalNotes')} (${tr('optional')})',
+                  _sizedField(
+                    width: _fieldWidth(width),
+                    child: TextFormField(
+                      controller: nationalIdController,
+                      onChanged: (_) => onFieldChanged(),
+                      decoration: InputDecoration(
+                        labelText: '${tr('nationalId')} (${tr('optional')})',
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              _sizedField(
-                width: 612,
-                child: TextFormField(
-                  controller: allergiesController,
-                  decoration: InputDecoration(
-                    labelText:
-                        '${tr('allergies')} (${tr('optional')}) - comma separated',
+                  _sizedField(
+                    width: _fieldWidth(width, span: fullSpan),
+                    child: TextFormField(
+                      controller: reasonController,
+                      onChanged: (_) => onFieldChanged(),
+                      decoration: InputDecoration(
+                        labelText:
+                            '${tr('reasonForVisit')} (${tr('optional')})',
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              _sizedField(
-                width: 612,
-                child: TextFormField(
-                  controller: chronicController,
-                  decoration: InputDecoration(
-                    labelText:
-                        '${tr('chronicDiseases')} (${tr('optional')}) - comma separated',
+                  _sizedField(
+                    width: _fieldWidth(width, span: fullSpan),
+                    child: TextFormField(
+                      controller: medicalNotesController,
+                      onChanged: (_) => onFieldChanged(),
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: '${tr('medicalNotes')} (${tr('optional')})',
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ],
+                  _sizedField(
+                    width: _fieldWidth(width, span: fullSpan),
+                    child: TextFormField(
+                      controller: allergiesController,
+                      onChanged: (_) => onFieldChanged(),
+                      decoration: InputDecoration(
+                        labelText:
+                            '${tr('allergies')} (${tr('optional')}) - comma separated',
+                      ),
+                    ),
+                  ),
+                  _sizedField(
+                    width: _fieldWidth(width, span: fullSpan),
+                    child: TextFormField(
+                      controller: chronicController,
+                      onChanged: (_) => onFieldChanged(),
+                      decoration: InputDecoration(
+                        labelText:
+                            '${tr('chronicDiseases')} (${tr('optional')}) - comma separated',
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 20),
-          Row(
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               GlassButton(
                 label: tr('save'),
                 onPressed: onSave,
                 icon: Icons.save_rounded,
               ),
-              const SizedBox(width: 10),
               TextButton(
                 onPressed: () => context.pop(),
                 child: Text(tr('cancel')),
@@ -481,5 +561,21 @@ class _PatientForm extends StatelessWidget {
 
   Widget _sizedField({required double width, required Widget child}) {
     return SizedBox(width: width, child: child);
+  }
+
+  int _columnsForWidth(double width) {
+    if (width >= 1080) return 3;
+    if (width >= 700) return 2;
+    return 1;
+  }
+
+  double _fieldWidth(double width, {int span = 1}) {
+    const spacing = 12.0;
+    final columns = _columnsForWidth(width);
+    final normalizedSpan = span.clamp(1, columns);
+    final columnWidth = (width - ((columns - 1) * spacing)) / columns;
+    final totalWidth =
+        (columnWidth * normalizedSpan) + ((normalizedSpan - 1) * spacing);
+    return totalWidth.clamp(220.0, width).toDouble();
   }
 }

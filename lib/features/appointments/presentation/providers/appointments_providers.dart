@@ -28,10 +28,14 @@ final calendarViewModeProvider = StateProvider<CalendarViewMode>(
 final todayAppointmentsProvider = StreamProvider<List<Appointment>>((ref) {
   final clinicId = ref.watch(currentClinicIdProvider);
   if (clinicId == null || clinicId.isEmpty) return const Stream.empty();
-  return ref.watch(appointmentsRepositoryProvider).watchTodayAppointments(clinicId);
+  return ref
+      .watch(appointmentsRepositoryProvider)
+      .watchTodayAppointments(clinicId);
 });
 
-final selectedViewAppointmentsProvider = StreamProvider<List<Appointment>>((ref) {
+final selectedViewAppointmentsProvider = StreamProvider<List<Appointment>>((
+  ref,
+) {
   final clinicId = ref.watch(currentClinicIdProvider);
   if (clinicId == null || clinicId.isEmpty) return const Stream.empty();
 
@@ -43,9 +47,9 @@ final selectedViewAppointmentsProvider = StreamProvider<List<Appointment>>((ref)
   switch (view) {
     case CalendarViewMode.day:
       from = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-      to = from.add(const Duration(days: 1)).subtract(
-            const Duration(milliseconds: 1),
-          );
+      to = from
+          .add(const Duration(days: 1))
+          .subtract(const Duration(milliseconds: 1));
       break;
     case CalendarViewMode.week:
       final weekdayOffset = selectedDate.weekday - DateTime.monday;
@@ -54,9 +58,9 @@ final selectedViewAppointmentsProvider = StreamProvider<List<Appointment>>((ref)
         selectedDate.month,
         selectedDate.day,
       ).subtract(Duration(days: weekdayOffset));
-      to = from.add(const Duration(days: 7)).subtract(
-            const Duration(milliseconds: 1),
-          );
+      to = from
+          .add(const Duration(days: 7))
+          .subtract(const Duration(milliseconds: 1));
       break;
     case CalendarViewMode.month:
       from = DateTime(selectedDate.year, selectedDate.month, 1);
@@ -64,11 +68,9 @@ final selectedViewAppointmentsProvider = StreamProvider<List<Appointment>>((ref)
       break;
   }
 
-  return ref.watch(appointmentsRepositoryProvider).watchAppointmentsInRange(
-        clinicId: clinicId,
-        from: from,
-        to: to,
-      );
+  return ref
+      .watch(appointmentsRepositoryProvider)
+      .watchAppointmentsInRange(clinicId: clinicId, from: from, to: to);
 });
 
 final upcomingWeekVisitsCountProvider = StreamProvider<int>((ref) {
@@ -91,6 +93,8 @@ class AppointmentEditorController extends AutoDisposeAsyncNotifier<void> {
     required String patientId,
     required String patientName,
     required String patientPhone,
+    required String doctorId,
+    required String doctorName,
     required DateTime startAt,
     required int durationMinutes,
     required String reason,
@@ -101,7 +105,9 @@ class AppointmentEditorController extends AutoDisposeAsyncNotifier<void> {
       final clinicId = ref.read(currentClinicIdProvider);
       final userId = ref.read(currentUserIdProvider);
       if (clinicId == null || clinicId.isEmpty || userId == null) {
-        throw const AppException('لا يوجد سياق عيادة أو مستخدم، أعد تسجيل الدخول');
+        throw const AppException(
+          'لا يوجد سياق عيادة أو مستخدم، أعد تسجيل الدخول',
+        );
       }
 
       final now = DateTime.now();
@@ -115,12 +121,15 @@ class AppointmentEditorController extends AutoDisposeAsyncNotifier<void> {
         durationMinutes: durationMinutes,
         reason: reason.trim(),
         status: status,
-        doctorId: userId,
+        doctorId: doctorId,
+        doctorName: doctorName,
         createdAt: now,
         updatedAt: now,
       );
 
-      await ref.read(appointmentsRepositoryProvider).upsertAppointment(appointment);
+      await ref
+          .read(appointmentsRepositoryProvider)
+          .upsertAppointment(appointment);
     });
   }
 
@@ -140,7 +149,9 @@ class AppointmentEditorController extends AutoDisposeAsyncNotifier<void> {
   }) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(
-      () => ref.read(appointmentsRepositoryProvider).updateStatus(
+      () => ref
+          .read(appointmentsRepositoryProvider)
+          .updateStatus(
             clinicId: clinicId,
             appointmentId: appointmentId,
             status: status.value,
@@ -154,15 +165,14 @@ class AppointmentEditorController extends AutoDisposeAsyncNotifier<void> {
   }) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(
-      () => ref.read(appointmentsRepositoryProvider).deleteAppointment(
-            clinicId: clinicId,
-            appointmentId: appointmentId,
-          ),
+      () => ref
+          .read(appointmentsRepositoryProvider)
+          .deleteAppointment(clinicId: clinicId, appointmentId: appointmentId),
     );
   }
 }
 
 final appointmentEditorControllerProvider =
     AutoDisposeAsyncNotifierProvider<AppointmentEditorController, void>(
-  AppointmentEditorController.new,
-);
+      AppointmentEditorController.new,
+    );
