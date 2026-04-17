@@ -1,15 +1,32 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
-import 'core/services/firebase/firebase_initializer.dart';
-import 'core/services/notifications/fcm_service.dart';
-import 'core/services/notifications/local_notification_service.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await FirebaseInitializer.initialize();
-  await LocalNotificationService.instance.initialize();
-  await FcmService.instance.initialize();
-  runApp(const ProviderScope(child: ClinicMxApp()));
+void main() {
+  // Run inside an error zone so that uncaught async errors (including native
+  // Firebase / plugin errors) don't terminate the Windows process.
+  runZonedGuarded(
+    () {
+      WidgetsFlutterBinding.ensureInitialized();
+
+      FlutterError.onError = (details) {
+        FlutterError.presentError(details);
+        debugPrint('FlutterError: ${details.exception}');
+      };
+
+      PlatformDispatcher.instance.onError = (error, stack) {
+        debugPrint('PlatformDispatcher error: $error\n$stack');
+        return true; // prevent process crash
+      };
+
+      runApp(const ProviderScope(child: ClinicMxApp()));
+    },
+    (error, stack) {
+      debugPrint('Uncaught zone error: $error\n$stack');
+    },
+  );
 }

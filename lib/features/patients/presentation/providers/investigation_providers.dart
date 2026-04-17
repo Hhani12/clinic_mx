@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
@@ -51,58 +52,70 @@ class InvestigationUploadController extends AutoDisposeAsyncNotifier<void> {
   }) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      try {
-        final clinicId = ref.read(currentClinicIdProvider);
-        final userId = ref.read(currentUserIdProvider);
-        if (clinicId == null || clinicId.isEmpty || userId == null) {
-          throw const AppException(
-            'لا يوجد سياق عيادة أو مستخدم، أعد تسجيل الدخول',
-          );
-        }
-
-        final downloadUrl = await ref
-            .read(storageServiceProvider)
-            .uploadInvestigationFile(
-              clinicId: clinicId,
-              patientId: patientId,
-              fileName: fileName,
-              bytes: bytes,
-              contentType: contentType,
-            );
-
-        final investigation = Investigation(
-          id: const Uuid().v4(),
-          clinicId: clinicId,
-          patientId: patientId,
-          uploadedBy: userId,
-          fileUrl: downloadUrl,
-          fileName: fileName,
-          fileType: contentType,
-          category: category,
-          createdAt: DateTime.now(),
+      final clinicId = ref.read(currentClinicIdProvider);
+      final userId = ref.read(currentUserIdProvider);
+      if (clinicId == null || clinicId.isEmpty || userId == null) {
+        throw const AppException(
+          'لا يوجد سياق عيادة أو مستخدم، أعد تسجيل الدخول',
         );
-
-        await ref
-            .read(firestoreServiceProvider)
-            .clinicCollection(clinicId, FirestorePaths.investigations)
-            .doc(investigation.id)
-            .set(investigation.toMap());
-      } on FirebaseException catch (e) {
-        if (e.code == 'object-not-found') {
-          throw const AppException(
-            'حدث تأخر في تثبيت الملف على الخادم، أعد المحاولة.',
-            code: 'object-not-found',
-          );
-        }
-        throw AppException.fromFirebase(e);
       }
+
+      // Validate file size (max 10MB for Firebase Storage)
+      const maxFileSize = 10 * 1024 * 1024; // 10MB
+      if (bytes.length > maxFileSize) {
+        throw const AppException(
+          'حجم الملف كبير جداً. الحد الأقصى هو 10 ميجابايت',
+        );
+      }
+
+      // Upload to Firebase Storage with a timeout so it doesn't hang forever
+      final downloadUrl = await ref
+          .read(storageServiceProvider)
+          .uploadInvestigationFile(
+            clinicId: clinicId,
+            patientId: patientId,
+            fileName: fileName,
+            bytes: bytes,
+            contentType: contentType,
+          )
+          .timeout(
+            const Duration(seconds: 60),
+            onTimeout: () => throw const AppException(
+              'انتهت مهلة رفع الملف، تحقق من اتصالك بالإنترنت وحاول مجدداً',
+            ),
+          );
+
+      final investigation = Investigation(
+        id: const Uuid().v4(),
+        clinicId: clinicId,
+        patientId: patientId,
+        uploadedBy: userId,
+        fileUrl: downloadUrl,
+        fileName: fileName,
+        fileType: contentType,
+        category: category,
+        createdAt: DateTime.now(),
+      );
+
+      await ref
+          .read(firestoreServiceProvider)
+          .clinicCollection(clinicId, FirestorePaths.investigations)
+          .doc(investigation.id)
+          .set(investigation.toMap());
     });
   }
 
   Future<void> delete(Investigation investigation) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      await ref.read(storageServiceProvider).deleteByUrl(investigation.fileUrl);
+      try {
+        await ref
+            .read(storageServiceProvider)
+            .deleteByUrl(investigation.fileUrl);
+      } catch (_) {
+        // File may already be gone — continue with Firestore cleanup
+      }
+
       await ref
           .read(firestoreServiceProvider)
           .clinicCollection(

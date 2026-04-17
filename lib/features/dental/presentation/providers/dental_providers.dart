@@ -1,21 +1,27 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/exceptions/app_exception.dart';
+import '../../../../core/local/local_providers.dart';
 import '../../../../core/services/firebase/firebase_providers.dart';
 import '../../../../core/services/firebase/firestore_service.dart';
+import '../../data/repositories/dental_local_repository_impl.dart';
 import '../../data/repositories/dental_repository_impl.dart';
 import '../../domain/entities/dental_plan_item.dart';
 import '../../domain/repositories/dental_repository.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 
 final dentalRepositoryProvider = Provider<DentalRepository>((ref) {
-  return DentalRepositoryImpl(
-    firestoreService: ref.watch(firestoreServiceProvider),
-    firestore: ref.watch(firestoreProvider),
-  );
+  if (kIsWeb) {
+    return DentalRepositoryImpl(
+      firestoreService: ref.watch(firestoreServiceProvider),
+      firestore: ref.watch(firestoreProvider),
+    );
+  }
+  return DentalLocalRepositoryImpl(ref.watch(dentalPlansLocalDaoProvider));
 });
 
 final selectedDentalPatientIdProvider = StateProvider<String?>((ref) => null);

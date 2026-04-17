@@ -1,12 +1,15 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/exceptions/app_exception.dart';
+import '../../../../core/local/local_providers.dart';
 import '../../../../core/services/firebase/firestore_service.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/datasources/patients_remote_data_source.dart';
+import '../../data/repositories/patients_local_repository_impl.dart';
 import '../../data/repositories/patients_repository_impl.dart';
 import '../../domain/entities/patient.dart';
 import '../../domain/repositories/patients_repository.dart';
@@ -19,7 +22,10 @@ final patientsRemoteDataSourceProvider = Provider<PatientsRemoteDataSource>((
 });
 
 final patientsRepositoryProvider = Provider<PatientsRepository>((ref) {
-  return PatientsRepositoryImpl(ref.watch(patientsRemoteDataSourceProvider));
+  if (kIsWeb) {
+    return PatientsRepositoryImpl(ref.watch(patientsRemoteDataSourceProvider));
+  }
+  return PatientsLocalRepositoryImpl(ref.watch(patientsLocalDaoProvider));
 });
 
 final watchPatientsUseCaseProvider = Provider<WatchPatientsUseCase>((ref) {

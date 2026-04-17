@@ -5,24 +5,36 @@ service firebase.storage {
       return request.auth != null;
     }
 
-    function userDoc() {
+    function getUserData() {
       return firestore.get(
         /databases/(default)/documents/users/$(request.auth.uid)
-      );
+      ).data;
     }
 
     function inClinic(clinicId) {
+      let userData = getUserData();
       return isSignedIn() &&
-        userDoc().data != null &&
-        userDoc().data.isActive == true &&
-        userDoc().data.clinicId == clinicId;
+        userData != null &&
+        userData.isActive == true &&
+        userData.clinicId == clinicId;
     }
 
     function canWriteFiles(clinicId) {
+      let userData = getUserData();
       return inClinic(clinicId) &&
-        ['admin', 'doctor', 'reception'].hasAny([userDoc().data.role]);
+        ['admin', 'doctor', 'reception'].hasAny([userData.role]);
     }
 
+    // Match investigation files: clinics/{clinicId}/patients/{patientId}/investigations/{fileId}
+    match /clinics/{clinicId}/patients/{patientId}/investigations/{fileName} {
+      allow read: if inClinic(clinicId);
+      allow write: if canWriteFiles(clinicId) && (
+        request.resource.contentType.matches('image/.*') ||
+        request.resource.contentType == 'application/pdf'
+      );
+    }
+
+    // Catch-all for any other patient-related files
     match /clinics/{clinicId}/patients/{patientId}/{allPaths=**} {
       allow read: if inClinic(clinicId);
       allow write: if canWriteFiles(clinicId);

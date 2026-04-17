@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -24,29 +26,44 @@ class FirebaseAuthRepository implements AuthRepository {
 
   @override
   Stream<AppUserProfile?> watchCurrentUserProfile() async* {
-    await for (final user in _auth.authStateChanges()) {
+    final controller = StreamController<AppUserProfile?>.broadcast();
+    StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? firestoreSub;
+
+    final authSub = _auth.authStateChanges().listen((user) {
+      firestoreSub?.cancel();
       if (user == null) {
-        yield null;
-        continue;
+        controller.add(null);
+        return;
       }
 
-      yield* _firestore
+      firestoreSub = _firestore
           .collection(FirestorePaths.users)
           .doc(user.uid)
           .snapshots()
-          .map((snapshot) {
-            if (!snapshot.exists || snapshot.data() == null) {
-              return null;
-            }
-            return AppUserProfile.fromMap(snapshot.data()!);
-          })
-          .handleError((Object error) {
-            if (error is FirebaseException) {
-              throw AppException.fromFirebase(error);
-            }
-            throw error;
-          });
-    }
+          .listen(
+        (snapshot) {
+          if (!snapshot.exists || snapshot.data() == null) {
+            controller.add(null);
+          } else {
+            controller.add(AppUserProfile.fromMap(snapshot.data()!));
+          }
+        },
+        onError: (Object error) {
+          if (error is FirebaseException) {
+            controller.addError(AppException.fromFirebase(error));
+          } else {
+            controller.addError(error);
+          }
+        },
+      );
+    });
+
+    controller.onCancel = () {
+      authSub.cancel();
+      firestoreSub?.cancel();
+    };
+
+    yield* controller.stream;
   }
 
   @override

@@ -41,6 +41,9 @@ class PaymentTransaction {
     required this.createdBy,
     required this.createdAt,
     required this.updatedAt,
+    this.doctorId,
+    this.doctorName,
+    this.doctorShare = 0,
     this.appointmentId,
     this.notes,
   });
@@ -49,6 +52,9 @@ class PaymentTransaction {
   final String clinicId;
   final String patientId;
   final String patientName;
+  final String? doctorId;
+  final String? doctorName;
+  final double doctorShare;
   final String? appointmentId;
   final double amount;
   final double paid;
@@ -75,6 +81,9 @@ class PaymentTransaction {
     String? createdBy,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? doctorId,
+    String? doctorName,
+    double? doctorShare,
   }) {
     return PaymentTransaction(
       id: id ?? this.id,
@@ -91,6 +100,9 @@ class PaymentTransaction {
       createdBy: createdBy ?? this.createdBy,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      doctorId: doctorId ?? this.doctorId,
+      doctorName: doctorName ?? this.doctorName,
+      doctorShare: doctorShare ?? this.doctorShare,
     );
   }
 
@@ -110,6 +122,9 @@ class PaymentTransaction {
       'createdBy': createdBy,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
+      'doctorId': doctorId,
+      'doctorName': doctorName,
+      'doctorShare': doctorShare,
     };
   }
 
@@ -132,6 +147,9 @@ class PaymentTransaction {
       createdBy: map['createdBy'] as String? ?? '',
       createdAt: _asDateTime(map['createdAt']) ?? DateTime.now(),
       updatedAt: _asDateTime(map['updatedAt']) ?? DateTime.now(),
+      doctorId: map['doctorId'] as String?,
+      doctorName: map['doctorName'] as String?,
+      doctorShare: (map['doctorShare'] as num?)?.toDouble() ?? 0,
     );
   }
 

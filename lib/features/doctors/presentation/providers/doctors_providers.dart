@@ -1,12 +1,15 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/exceptions/app_exception.dart';
+import '../../../../core/local/local_providers.dart';
 import '../../../../core/services/firebase/firestore_paths.dart';
 import '../../../../core/services/firebase/firestore_service.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../data/repositories/doctors_local_repository_impl.dart';
 import '../../data/repositories/doctors_repository_impl.dart';
 import '../../domain/entities/doctor_profile.dart';
 import '../../domain/repositories/doctors_repository.dart';
@@ -27,7 +30,10 @@ class DoctorMonthlyStats {
 }
 
 final doctorsRepositoryProvider = Provider<DoctorsRepository>((ref) {
-  return DoctorsRepositoryImpl(ref.watch(firestoreServiceProvider));
+  if (kIsWeb) {
+    return DoctorsRepositoryImpl(ref.watch(firestoreServiceProvider));
+  }
+  return DoctorsLocalRepositoryImpl(ref.watch(doctorsLocalDaoProvider));
 });
 
 final doctorsStreamProvider = StreamProvider<List<DoctorProfile>>((ref) {
@@ -98,13 +104,15 @@ class DoctorsEditorController extends AutoDisposeAsyncNotifier<void> {
   FutureOr<void> build() {}
 
   Future<void> create({
-    required String fullName,
+    String fullName = '',
     String? phone,
     String? specialty,
     String? address,
     String? notes,
-    required double monthlySalaryIqd,
-    required double commissionPercent,
+    String? profilePictureUrl,
+    double monthlySalaryIqd = 0,
+    double commissionPercent = 0,
+    DoctorPaymentType paymentType = DoctorPaymentType.commission,
     bool isActive = true,
   }) async {
     state = const AsyncLoading();
@@ -122,8 +130,10 @@ class DoctorsEditorController extends AutoDisposeAsyncNotifier<void> {
         specialty: _clean(specialty),
         address: _clean(address),
         notes: _clean(notes),
+        profilePictureUrl: _clean(profilePictureUrl),
         monthlySalaryIqd: monthlySalaryIqd,
         commissionPercent: commissionPercent,
+        paymentType: paymentType,
         createdAt: now,
         updatedAt: now,
         isActive: isActive,

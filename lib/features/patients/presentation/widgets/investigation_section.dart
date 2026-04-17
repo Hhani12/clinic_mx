@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -17,7 +20,7 @@ class InvestigationSection extends ConsumerWidget {
 
   final String patientId;
 
-  static const _allowedExtensions = ['jpg', 'jpeg', 'png'];
+  static const _allowedExtensions = ['jpg', 'jpeg', 'png', 'pdf', 'webp'];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -91,6 +94,14 @@ class InvestigationSection extends ConsumerWidget {
     );
   }
 
+  static const _contentTypes = <String, String>{
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'webp': 'image/webp',
+    'pdf': 'application/pdf',
+  };
+
   Future<void> _pickAndUpload(BuildContext context, WidgetRef ref) async {
     final tr = context.l10n.tr;
 
@@ -116,7 +127,43 @@ class InvestigationSection extends ConsumerWidget {
     if (result == null || result.files.isEmpty) return;
 
     final file = result.files.first;
-    if (file.bytes == null) return;
+
+    // Validate file size before upload (max 10MB)
+    final fileSize = file.size;
+    const maxFileSize = 10 * 1024 * 1024; // 10MB
+    if (fileSize > maxFileSize) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr('fileTooLarge'))),
+        );
+      }
+      return;
+    }
+
+    // On desktop, file.bytes can be null even with withData: true.
+    // Fall back to reading from the file path.
+    Uint8List? bytes = file.bytes;
+    if (bytes == null && !kIsWeb && file.path != null) {
+      try {
+        bytes = await File(file.path!).readAsBytes();
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('فشل قراءة الملف: ${e.toString()}')),
+          );
+        }
+        return;
+      }
+    }
+
+    if (bytes == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr('invalidFileType'))),
+        );
+      }
+      return;
+    }
 
     final ext = file.extension?.toLowerCase() ?? '';
     if (!_allowedExtensions.contains(ext)) {
@@ -128,19 +175,25 @@ class InvestigationSection extends ConsumerWidget {
       return;
     }
 
-    final contentType = ext == 'png' ? 'image/png' : 'image/jpeg';
+    final contentType = _contentTypes[ext] ?? 'application/octet-stream';
 
     await ref.read(investigationUploadControllerProvider.notifier).upload(
           patientId: patientId,
           fileName: file.name,
-          bytes: file.bytes!,
+          bytes: bytes,
           contentType: contentType,
           category: category,
         );
 
     if (!context.mounted) return;
     final state = ref.read(investigationUploadControllerProvider);
-    if (!state.hasError) {
+    if (state.hasError) {
+      // Show the actual error message from the exception
+      final errorMessage = state.error?.toString() ?? tr('uploadFailed');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(errorMessage)),
+      );
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(tr('uploadSuccess'))),
       );
@@ -227,7 +280,7 @@ class _InvestigationTile extends StatelessWidget {
               child: Image.network(
                 investigation.fileUrl,
                 fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Icon(
+                errorBuilder: (_, __, ___) => Icon(
                   Icons.image_rounded,
                   color: textSecondary,
                 ),

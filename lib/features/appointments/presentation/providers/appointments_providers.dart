@@ -1,12 +1,15 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/enums/visit_status.dart';
 import '../../../../core/exceptions/app_exception.dart';
+import '../../../../core/local/local_providers.dart';
 import '../../../../core/services/firebase/firestore_service.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../data/repositories/appointments_local_repository_impl.dart';
 import '../../data/repositories/appointments_repository_impl.dart';
 import '../../domain/entities/appointment.dart';
 import '../../domain/repositories/appointments_repository.dart';
@@ -14,7 +17,11 @@ import '../../domain/repositories/appointments_repository.dart';
 enum CalendarViewMode { day, week, month }
 
 final appointmentsRepositoryProvider = Provider<AppointmentsRepository>((ref) {
-  return AppointmentsRepositoryImpl(ref.watch(firestoreServiceProvider));
+  if (kIsWeb) {
+    return AppointmentsRepositoryImpl(ref.watch(firestoreServiceProvider));
+  }
+  return AppointmentsLocalRepositoryImpl(
+      ref.watch(appointmentsLocalDaoProvider));
 });
 
 final selectedCalendarDateProvider = StateProvider<DateTime>(

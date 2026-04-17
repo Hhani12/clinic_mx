@@ -17,9 +17,10 @@ import '../../../patients/presentation/widgets/investigation_section.dart';
 import '../../../settings/presentation/providers/settings_providers.dart';
 import '../providers/dental_providers.dart';
 import '../providers/tooth_records_providers.dart';
+import '../widgets/dental_3d_chart.dart';
 import '../widgets/teeth_chart.dart';
 import '../widgets/tooth_detail_panel.dart';
-
+import '../widgets/tooth_procedure_sheet.dart';
 class DentalChartPage extends ConsumerStatefulWidget {
   const DentalChartPage({super.key});
 
@@ -36,6 +37,7 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
   String? _selectedAction;
   String? _selectedDoctorId;
   bool _multiSelectEnabled = false;
+  bool _use3DChart = false;
 
   @override
   void dispose() {
@@ -44,18 +46,30 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
     super.dispose();
   }
 
-  /// Save procedure: creates DentalPlanItem (audit log) AND updates ToothRecord
+  /// Save procedure: creates DentalPlanItem (audit log) AND updates ToothRecord.
+  ///
+  /// When [actionOverride], [teethOverride], or [noteOverride] are provided
+  /// they take precedence over the member-state values. This is critical for
+  /// the bottom-sheet flow where the sheet pops before the async save finishes.
   Future<void> _applyAction({
     required String patientId,
     required String doctorId,
     required TeethNumberingSystem numberingSystem,
+    String? actionOverride,
+    Set<int>? teethOverride,
+    String? noteOverride,
   }) async {
-    final action = _selectedAction;
-    if (action == null || _selectedTeeth.isEmpty) return;
+    final action = actionOverride ?? _selectedAction;
+    final teeth = teethOverride ?? Set<int>.of(_selectedTeeth);
+    final note = noteOverride ?? _noteController.text.trim();
+
+    if (action == null || teeth.isEmpty) return;
     if (doctorId.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('يرجى اختيار طبيب')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('يرجى اختيار طبيب')),
+        );
+      }
       return;
     }
 
@@ -66,10 +80,9 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
         .map((d) => d.fullName)
         .firstOrNull;
 
-    final toothIds = _selectedTeeth
-        .map((universal) => numberingSystem == TeethNumberingSystem.fdi
-            ? ToothMeta.of(universal).fdi
-            : universal.toString())
+    // Always convert to FDI for storage consistency
+    final toothIds = teeth
+        .map((universal) => ToothMeta.of(universal).fdi)
         .toList();
 
     // 1. Save to dentalPlans (audit log — existing flow)
@@ -81,7 +94,7 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
           toothIds: toothIds,
           numberingSystem: numberingSystem.name,
           actionLabel: action,
-          note: _noteController.text.trim(),
+          note: note,
         );
 
     if (!mounted) return;
@@ -98,9 +111,7 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
             actionLabel: action,
             doctorId: doctorId,
             doctorName: doctorName,
-            note: _noteController.text.trim().isEmpty
-                ? null
-                : _noteController.text.trim(),
+            note: note.isEmpty ? null : note,
           );
     }
 
@@ -345,55 +356,128 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
                           child:
                               _SelectionBubble(count: _selectedTeeth.length),
                         ),
-                      // The 3D-style teeth chart
+                      // The 3D-style interactive teeth chart
                       GlassCard(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
-                          vertical: 20,
+                          vertical: 8,
                         ),
-                        child: TeethChart(
-                          numberingSystem: numberingSystem,
-                          selectedTeeth: _selectedTeeth,
-                          hoveredTooth: _hoveredTooth,
-                          toothStatuses: toothStatuses,
-                          procedureCounts: procedureCounts,
-                          onHover: (value) =>
-                              setState(() => _hoveredTooth = value),
-                          onTap: (tooth) {
-                            setState(() {
-                              if (_multiSelectEnabled) {
-                                if (_selectedTeeth.contains(tooth)) {
-                                  _selectedTeeth.remove(tooth);
-                                } else {
-                                  _selectedTeeth.add(tooth);
-                                }
-                              } else {
-                                _selectedTeeth
-                                  ..clear()
-                                  ..add(tooth);
-                              }
-                            });
-                            if (!isDesktop && !_multiSelectEnabled) {
-                              _openMobileActionSheet(
-                                patientId: selectedPatientId,
-                                doctorId: _selectedDoctorId,
+                        child: Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                  bottom: 8, top: 4),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _use3DChart
+                                        ? Icons.view_in_ar_rounded
+                                        : Icons.grid_view_rounded,
+                                    color: const Color(0xFF00E5FF),
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'تخطيط الأسنان التفاعلي',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14),
+                                  ),
+                                  const Spacer(),
+                                  // 2D / 3D toggle
+                                  _ChartModeToggle(
+                                    is3D: _use3DChart,
+                                    onChanged: (v) =>
+                                        setState(() => _use3DChart = v),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (_use3DChart)
+                              Dental3DChart(
                                 numberingSystem: numberingSystem,
-                                actions: actions,
-                                history: history,
-                                editorState: editorState,
-                              );
-                            }
-                          },
-                          onLongPress: (tooth) {
-                            setState(() {
-                              _multiSelectEnabled = true;
-                              if (_selectedTeeth.contains(tooth)) {
-                                _selectedTeeth.remove(tooth);
-                              } else {
-                                _selectedTeeth.add(tooth);
-                              }
-                            });
-                          },
+                                selectedTeeth: _selectedTeeth,
+                                hoveredTooth: _hoveredTooth,
+                                toothStatuses: toothStatuses,
+                                procedureCounts: procedureCounts,
+                                onHover: (value) =>
+                                    setState(() => _hoveredTooth = value),
+                                onTap: (tooth) {
+                                  setState(() {
+                                    if (_multiSelectEnabled) {
+                                      if (_selectedTeeth.contains(tooth)) {
+                                        _selectedTeeth.remove(tooth);
+                                      } else {
+                                        _selectedTeeth.add(tooth);
+                                      }
+                                    } else {
+                                      _selectedTeeth
+                                        ..clear()
+                                        ..add(tooth);
+                                    }
+                                  });
+                                  if (!_multiSelectEnabled) {
+                                    _openToothProcedureSheet(
+                                      universal: tooth,
+                                      patientId: selectedPatientId,
+                                      numberingSystem: numberingSystem,
+                                    );
+                                  }
+                                },
+                                onLongPress: (tooth) {
+                                  setState(() {
+                                    _multiSelectEnabled = true;
+                                    if (_selectedTeeth.contains(tooth)) {
+                                      _selectedTeeth.remove(tooth);
+                                    } else {
+                                      _selectedTeeth.add(tooth);
+                                    }
+                                  });
+                                },
+                              )
+                            else
+                              TeethChart(
+                                numberingSystem: numberingSystem,
+                                selectedTeeth: _selectedTeeth,
+                                hoveredTooth: _hoveredTooth,
+                                toothStatuses: toothStatuses,
+                                procedureCounts: procedureCounts,
+                                onHover: (value) =>
+                                    setState(() => _hoveredTooth = value),
+                                onTap: (tooth) {
+                                  setState(() {
+                                    if (_multiSelectEnabled) {
+                                      if (_selectedTeeth.contains(tooth)) {
+                                        _selectedTeeth.remove(tooth);
+                                      } else {
+                                        _selectedTeeth.add(tooth);
+                                      }
+                                    } else {
+                                      _selectedTeeth
+                                        ..clear()
+                                        ..add(tooth);
+                                    }
+                                  });
+                                  if (!_multiSelectEnabled) {
+                                    _openToothProcedureSheet(
+                                      universal: tooth,
+                                      patientId: selectedPatientId,
+                                      numberingSystem: numberingSystem,
+                                    );
+                                  }
+                                },
+                                onLongPress: (tooth) {
+                                  setState(() {
+                                    _multiSelectEnabled = true;
+                                    if (_selectedTeeth.contains(tooth)) {
+                                      _selectedTeeth.remove(tooth);
+                                    } else {
+                                      _selectedTeeth.add(tooth);
+                                    }
+                                  });
+                                },
+                              ),
+                          ],
                         ),
                       ),
                       // Tooth detail panel (shows procedures for selected tooth)
@@ -468,44 +552,48 @@ class _DentalChartPageState extends ConsumerState<DentalChartPage> {
     );
   }
 
-  Future<void> _openMobileActionSheet({
+  void _openToothProcedureSheet({
+    required int universal,
     required String patientId,
-    required String? doctorId,
     required TeethNumberingSystem numberingSystem,
-    required List<String> actions,
-    required AsyncValue<List<DentalPlanItem>> history,
-    required AsyncValue<void> editorState,
   }) {
-    return showModalBottomSheet<void>(
+    final meta = ToothMeta.of(universal);
+    final records =
+        ref.read(toothRecordsForPatientProvider).valueOrNull ?? [];
+    final record = records
+        .where((r) => r.toothId == meta.fdi)
+        .firstOrNull;
+    final doctors = ref.read(activeDoctorsProvider);
+    final actions = ref.read(toothActionsProvider);
+
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 16,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-        ),
-        child: _DentalActionPanel(
-          selectedTeeth: _selectedTeeth,
-          selectedAction: _selectedAction,
-          noteController: _noteController,
-          actions: actions,
-          history: history,
-          editorState: editorState,
-          numberingSystem: numberingSystem,
-          onActionChanged: (v) => setState(() => _selectedAction = v),
-          onApply: () {
-            _applyAction(
-              patientId: patientId,
-              doctorId: doctorId ?? '',
-              numberingSystem: numberingSystem,
-            );
-            Navigator.pop(context);
-          },
-          onClearSelection: () => setState(() => _selectedTeeth.clear()),
-          onAddCustomAction: () => _showCustomActionDialog(actions),
-        ),
+      backgroundColor: Colors.transparent,
+      builder: (_) => ToothProcedureSheet(
+        universal: universal,
+        patientId: patientId,
+        toothRecord: record,
+        doctors: doctors,
+        extraActions: actions,
+        initialDoctorId: _selectedDoctorId,
+        onApply: ({required action, required doctorId, required note}) {
+          // Capture the tooth set before any async/rebuild can mutate it
+          final teethSnapshot = {universal};
+          setState(() {
+            _selectedAction = action;
+            _selectedDoctorId = doctorId;
+            _noteController.text = note;
+          });
+          _applyAction(
+            patientId: patientId,
+            doctorId: doctorId,
+            numberingSystem: numberingSystem,
+            actionOverride: action,
+            teethOverride: teethSnapshot,
+            noteOverride: note,
+          );
+        },
       ),
     );
   }
@@ -970,6 +1058,74 @@ class _ActionChip extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChartModeToggle extends StatelessWidget {
+  const _ChartModeToggle({required this.is3D, required this.onChanged});
+  final bool is3D;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ToggleOption(
+            label: '2D',
+            isActive: !is3D,
+            onTap: () => onChanged(false),
+          ),
+          _ToggleOption(
+            label: '3D',
+            isActive: is3D,
+            onTap: () => onChanged(true),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToggleOption extends StatelessWidget {
+  const _ToggleOption({
+    required this.label,
+    required this.isActive,
+    required this.onTap,
+  });
+  final String label;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        decoration: BoxDecoration(
+          color: isActive
+              ? const Color(0xFF00E5FF).withValues(alpha: 0.2)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
+            color: isActive ? const Color(0xFF00E5FF) : Colors.white54,
           ),
         ),
       ),

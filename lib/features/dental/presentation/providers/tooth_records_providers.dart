@@ -1,20 +1,27 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/exceptions/app_exception.dart';
+import '../../../../core/local/local_providers.dart';
 import '../../../../core/services/firebase/firestore_service.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../data/repositories/tooth_records_local_repository_impl.dart';
 import '../../data/repositories/tooth_records_repository_impl.dart';
 import '../../domain/entities/tooth_record.dart';
 import '../../domain/repositories/tooth_records_repository.dart';
 import 'dental_providers.dart';
 
 final toothRecordsRepositoryProvider = Provider<ToothRecordsRepository>((ref) {
-  return ToothRecordsRepositoryImpl(
-    firestoreService: ref.watch(firestoreServiceProvider),
-  );
+  if (kIsWeb) {
+    return ToothRecordsRepositoryImpl(
+      firestoreService: ref.watch(firestoreServiceProvider),
+    );
+  }
+  return ToothRecordsLocalRepositoryImpl(
+      ref.watch(toothRecordsLocalDaoProvider));
 });
 
 /// Watch all tooth records for the currently selected dental patient
